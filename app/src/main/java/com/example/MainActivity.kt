@@ -25,12 +25,9 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val allGranted = permissions.entries.all { it.value }
-        if (allGranted) {
-           Log.i("ZoyaDiagnostic", "All permissions granted.")
-        } else {
-           Log.e("ZoyaDiagnostic", "Some permissions denied.")
-        }
+        val grantedCount = permissions.values.count { it }
+        val totalCount = permissions.size
+        Log.i("ZoyaDiagnostic", "Permission check completed: $grantedCount/$totalCount permissions granted.")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +35,7 @@ class MainActivity : ComponentActivity() {
         
         Log.i("ZoyaDiagnostic", "MainActivity onCreate started")
         
+        com.example.notification.CallAnnouncer.init(this)
         checkPermissions()
         startDiagnosticLogging()
 
@@ -68,12 +66,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkPermissions() {
-
         val permissions = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA,
             Manifest.permission.READ_CONTACTS,
-            Manifest.permission.CALL_PHONE
+            Manifest.permission.WRITE_CONTACTS,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            permissions.add(Manifest.permission.ANSWER_PHONE_CALLS)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }

@@ -122,11 +122,14 @@ class LiveSessionManager(
             })
             add(buildJsonObject {
                 put("name", "searchYouTube")
-                put("description", "Search for a query on YouTube app.")
+                put("description", "Search and automatically play songs, music playlists, or videos on the YouTube app. Use this when the user asks to play a song on YouTube, play a Hindi song, play any good song ('koi bhi achha song chala de'), or search for a video on YouTube.")
                 putJsonObject("parameters") {
                     put("type", "OBJECT")
                     putJsonObject("properties") {
-                        putJsonObject("query") { put("type", "STRING") }
+                        putJsonObject("query") { 
+                            put("type", "STRING") 
+                            put("description", "The search query or song title (e.g. 'Trending Hit Hindi Songs 2026', 'Arijit Singh Top Songs', 'Kesariya', or user specified title/artist).")
+                        }
                     }
                     putJsonArray("required") { add("query") }
                 }
@@ -311,6 +314,237 @@ class LiveSessionManager(
                     }
                 }
             })
+            add(buildJsonObject {
+                put("name", "rememberFact")
+                put("description", "Save any fact, personal detail, contact detail, credential, or information permanently in the assistant's long-term memory so Zoya never forgets it.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("topic") {
+                            put("type", "STRING")
+                            put("description", "The topic or label of what to remember (e.g. 'Car Number', 'WiFi Password', 'Boss Birthday', 'Friend Shivank')")
+                        }
+                        putJsonObject("fact") {
+                            put("type", "STRING")
+                            put("description", "The exact fact or information to remember permanently.")
+                        }
+                    }
+                    putJsonArray("required") { add("topic"); add("fact") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "teachSkill")
+                put("description", "Teach Zoya a new custom routine, rule, or behavior triggered by a specific voice command or phrase from the boss.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("trigger") {
+                            put("type", "STRING")
+                            put("description", "The trigger phrase or command taught by user (e.g. 'Good night', 'Office mode', 'Emergency report')")
+                        }
+                        putJsonObject("actionOrRule") {
+                            put("type", "STRING")
+                            put("description", "The exact action or instructions to execute whenever this trigger is spoken.")
+                        }
+                    }
+                    putJsonArray("required") { add("trigger"); add("actionOrRule") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "getLearnedMemories")
+                put("description", "Retrieve all permanent memories, remembered facts, and taught skills.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "forgetMemory")
+                put("description", "Remove a specific remembered fact or taught skill from permanent memory.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("key") {
+                            put("type", "STRING")
+                            put("description", "The topic or trigger phrase to forget.")
+                        }
+                    }
+                    putJsonArray("required") { add("key") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "sendSmsMessage")
+                put("description", "Send an SMS / text message to a contact or phone number.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("contactNameOrNumber") {
+                            put("type", "STRING")
+                            put("description", "The contact name or phone number.")
+                        }
+                        putJsonObject("message") {
+                            put("type", "STRING")
+                            put("description", "The text message content.")
+                        }
+                    }
+                    putJsonArray("required") { add("contactNameOrNumber"); add("message") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "findContact")
+                put("description", "Search the device contacts by name, nickname, title (e.g. 'Kamlesh Sir', 'Mummy', 'Papa', 'Rahul'), or partial name to find their phone number and check matches.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("contactName") {
+                            put("type", "STRING")
+                            put("description", "The name of the contact to find.")
+                        }
+                    }
+                    putJsonArray("required") { add("contactName") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "getContactNumbers")
+                put("description", "Get the phone number(s) of a specific contact from the device address book.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("contactName") {
+                            put("type", "STRING")
+                            put("description", "The contact name whose number is requested.")
+                        }
+                    }
+                    putJsonArray("required") { add("contactName") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "openWhatsAppChat")
+                put("description", "Open the WhatsApp chat conversation screen for a contact or phone number without typing or sending any message.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("contactNameOrNumber") {
+                            put("type", "STRING")
+                            put("description", "The contact name or phone number.")
+                        }
+                    }
+                    putJsonArray("required") { add("contactNameOrNumber") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "saveContact")
+                put("description", "Save a new contact with a name and phone number to the Android phone's contacts system.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("name") {
+                            put("type", "STRING")
+                            put("description", "The full name of the contact to save.")
+                        }
+                        putJsonObject("number") {
+                            put("type", "STRING")
+                            put("description", "The phone number to save.")
+                        }
+                    }
+                    putJsonArray("required") { add("name"); add("number") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "setConfirmationMode")
+                put("description", "Toggle confirmation mode on (ask before sending messages/calls) or off (instant mode: execute immediately without asking).")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("enabled") {
+                            put("type", "BOOLEAN")
+                            put("description", "True for Confirmation mode ON, False for Instant mode ON.")
+                        }
+                    }
+                    putJsonArray("required") { add("enabled") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "getRecentNotifications")
+                put("description", "Retrieve incoming notifications and communication events (WhatsApp messages, SMS, missed/incoming calls) intercepted by Zoya.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "configureNotificationSettings")
+                put("description", "Update notification, privacy, or autonomous reply settings based on user commands.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("privacyMode") {
+                            put("type", "BOOLEAN")
+                            put("description", "True to hide sender names and message previews from spoken announcements.")
+                        }
+                        putJsonObject("messagePreviewMode") {
+                            put("type", "BOOLEAN")
+                            put("description", "True to read notification preview text aloud, false to ask first.")
+                        }
+                        putJsonObject("autonomousMode") {
+                            put("type", "BOOLEAN")
+                            put("description", "True for 'Tum handle kar lo' mode (auto-reply to simple routine chats), false to ask every time.")
+                        }
+                        putJsonObject("replyStyle") {
+                            put("type", "STRING")
+                            put("description", "Reply style: 'casual', 'professional', 'short', 'friendly', or 'formal'.")
+                        }
+                        putJsonObject("monitorWhatsApp") {
+                            put("type", "BOOLEAN")
+                            put("description", "Enable or disable WhatsApp notification monitoring.")
+                        }
+                        putJsonObject("monitorSms") {
+                            put("type", "BOOLEAN")
+                            put("description", "Enable or disable SMS notification monitoring.")
+                        }
+                    }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "getNotificationSettings")
+                put("description", "View current notification monitoring, privacy, and autonomous reply settings.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "answerIncomingCall")
+                put("description", "Answer an incoming phone call or WhatsApp call when instructed by user (e.g. 'Utha lo', 'Call pick kar').")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "rejectIncomingCall")
+                put("description", "Reject or decline an incoming phone call or WhatsApp call (e.g. 'Reject kar do', 'Kaat do').")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "playFavoriteSong")
+                put("description", "Play user's favorite song on their preferred music app (YT Music, Spotify, or YouTube) configured in Settings.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "triggerSosEmergency")
+                put("description", "Trigger emergency SOS call to the favorite SOS contacts saved in Settings.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
         }
     }
 
@@ -372,6 +606,8 @@ class LiveSessionManager(
     }
 
     private fun sendInitialPrompt(ws: WebSocket) {
+        val prefs = context.getSharedPreferences("ZoyaPrefs", android.content.Context.MODE_PRIVATE)
+        val bossName = prefs.getString("boss_name", "Boss") ?: "Boss"
         val msg = buildJsonObject {
             putJsonObject("clientContent") {
                 putJsonArray("turns") {
@@ -379,7 +615,7 @@ class LiveSessionManager(
                         put("role", "user")
                         putJsonArray("parts") {
                             add(buildJsonObject {
-                                put("text", "Hi Zoya! Introduce yourself briefly.")
+                                put("text", "Hi Zoya! Greet me in Hindi and address me by my boss name: $bossName. Keep it brief and friendly.")
                             })
                         }
                     })
@@ -425,6 +661,13 @@ class LiveSessionManager(
             return
         }
         
+        val prefs = context.getSharedPreferences("ZoyaPrefs", android.content.Context.MODE_PRIVATE)
+        val echoGuard = prefs.getBoolean("echo_guard", true)
+        if (echoGuard && _zoyaState.value == ZoyaState.SPEAKING) {
+            // Echo guard active: Mute the mic while Maya speaks
+            return
+        }
+        
         Log.v("ZoyaDiagnostic", "Sending audio chunk size=${length} to Gemini")
         // Convert ShortArray to ByteArray (Little Endian)
         val byteArray = ByteArray(length * 2)
@@ -450,6 +693,180 @@ class LiveSessionManager(
     }
     
     private fun sendSetupMessage(ws: WebSocket) {
+        val prefs = context.getSharedPreferences("ZoyaPrefs", android.content.Context.MODE_PRIVATE)
+        val bossName = prefs.getString("boss_name", "RDX sir") ?: "RDX sir"
+        val assistantName = prefs.getString("assistant_name", "MAYA") ?: "MAYA"
+        val musicApp = prefs.getString("preferred_music_app", "YT Music") ?: "YT Music"
+        val favoriteSong = prefs.getString("favorite_song", "") ?: ""
+        val appLanguage = prefs.getString("app_language", "Hinglish (Hindi + English) — default") ?: "Hinglish (Hindi + English) — default"
+        val countryCode = prefs.getString("country_code", "India (+91)") ?: "India (+91)"
+        val confirmationMode = prefs.getBoolean("confirmation_mode", false)
+        val memoriesText = com.example.memory.MemoryManager.getMemoriesSummary(context)
+        val selectedPersona = com.example.persona.PersonaManager.getSelectedPersona(context)
+        val personaPrompt = com.example.persona.PersonaManager.getPersonaPrompt(selectedPersona, assistantName, bossName, appLanguage)
+
+        val systemPrompt = """
+You are $assistantName, an advanced, hands-free personal Android AI Assistant created by The Shadow X Rahul AI.
+Your communication system is completely natural-language driven.
+Preferred Language: $appLanguage.
+Default Country Code: $countryCode.
+Preferred Music App: $musicApp (Favorite Song: $favoriteSong).
+Always address the user warmly as your Boss / Sir (Name: $bossName).
+
+$personaPrompt
+
+${if (appLanguage.contains("Bhojpuri", ignoreCase = true)) """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BHOJPURI LANGUAGE INSTRUCTION:
+- Respond naturally, warmly and respectfully in pure/natural Bhojpuri (भोजपुरी).
+- Respectfully use honorifics like "रउआ", "मालिक", "राउर".
+- Common Bhojpuri phrases for tool responses:
+  • Greeting / Ready: "प्रणाम मालिक $bossName, का हुकुम बा?", "जी मालिक, बताईं का काम बा?"
+  • Message sent: "मेसेज भेज देहली मालिक।"
+  • Phone Call: "$bossName, फोन लगावत बानी।"
+  • WhatsApp Call: "व्हाट्सएप कॉल लगावत बानी।"
+  • Favorite Song: "राउर पसंदीदा गाना बजावत बानी मालिक।"
+  • Contact saved: "नंबर सेव हो गइल।"
+  • Contact not found: "मालिक, नंबर ना मिलल, एगो बेर फेर से नाम बताईं।"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+""" else ""}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. NATURAL LANGUAGE UNDERSTANDING (MOST CRITICAL)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- The user does NOT need to use fixed commands, exact keywords, or predefined templates.
+- The user can speak casually in Bhojpuri, Hindi, Hinglish, English, slang, short phrases, incomplete sentences, or mixed word orders.
+- Examples of same intent:
+  "Kamlesh Sir ko WhatsApp kar de."
+  "कमलेश सर के व्हाट्सएप पर मेसेज भेज द।"
+  "Kamlesh Sir ko WhatsApp pe message kar."
+  "Kamlesh Sir ko ek message bhej."
+  "Kamlesh Sir ko likh de ki kal class hai."
+  "कमलेश सर के बोल द की काल्ह 8 बजे आवे के बा।"
+  "Are Kamlesh Sir ko bol dena kal 8 baje aana hai."
+  "Kamlesh Sir ko bata de ki kal class 8 baje hai."
+  "Yaar Kamlesh Sir ko WhatsApp kar de, kal jaldi aa jaye."
+  "Kamlesh Sir ko text karna."
+  "WhatsApp pe Kamlesh Sir ko bol de."
+- Infer the intended action and parameters directly from context. NEVER require exact tool keywords.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. INTENT & MESSAGE EXTRACTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For every communication request, extract:
+- CONTACT: Contact name, nickname, title ("Kamlesh Sir", "Mummy", "Papa", "Bhai", "Pankaj Sir", "Rahul", "Chacha", etc.)
+- ACTION & APP:
+  • WhatsApp Message: 'whatsappSearchAndMessage' (or 'sendWhatsAppMessage')
+  • WhatsApp Call: 'whatsappSearchAndCall'
+  • Normal Phone Call: 'searchAndCallContact'
+  • SMS / Text: 'sendSmsMessage'
+  • Open Chat Screen: 'openWhatsAppChat'
+  • Get Contact Info: 'getContactNumbers' / 'findContact'
+  • Save Contact: 'saveContact'
+- MESSAGE CONTENT: Extract ONLY the actual intended message. STRIP OUT command wrappers like "bol de ki", "message bhej", "WhatsApp kar dena", "likh de ki", "bata de ki", "text kar", etc.
+  Example: "Kamlesh Sir ko bol de ki main aaj coaching nahi aa paunga." -> Message: "Main aaj coaching nahi aa paunga."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. CONTEXT MEMORY, PRONOUNS & FOLLOW-UPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Maintain conversation context across turns.
+- Resolve pronouns naturally: "usko", "unko", "inko", "ise", "wahi", "same", "ye message", "pichla message", "pehle wale ko".
+- Reuse previous messages when commanded: "Jo abhi Kamlesh Sir ko bheja wahi Pankaj Sir ko bhi bhej" / "Same message mummy ko bhi bhej".
+- Support message editing before or on follow-up: "Usme kal ki jagah parso kar de" / "Time 8 se 9 kar de" -> Update the message text and send.
+- Multi-action commands: If user asks for multiple actions in one sentence (e.g., "Kamlesh Sir ko WhatsApp kar ki kal class hai aur phir unko call bhi kar dena"), execute sequentially.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. SMART APP SELECTION & AMBIGUITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- If app is explicitly specified ("WhatsApp pe...", "SMS kar...", "WhatsApp call...", "Phone kar...", "YouTube par..."), use that exact app.
+- If user asks to play music/songs on YouTube or says "YouTube par Hindi song play kar", "koi bhi achha song chala de", "YouTube pe gaana bajao", "Arijit Singh ka gana chala do":
+  • Formulate a top trending query (e.g. "Trending Hindi Hit Songs 2026", "Best Hindi Songs", or user's requested track).
+  • Call 'searchYouTube' immediately with that query.
+- If app is NOT specified:
+  • For "message/text/likh/bata/bol" -> Default to WhatsApp ('whatsappSearchAndMessage').
+  • For "call/phone/mila" -> Default to normal phone call ('searchAndCallContact').
+  • For "gaana bajao/play song" -> Default to Preferred Music App ($musicApp) or 'searchYouTube'.
+- DO NOT OVER-ASK. If the user says "Kamlesh Sir ko WhatsApp kar de ki main late ho jaunga", DO NOT ask "Kis app par?". Execute immediately.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. EXECUTION & CONFIRMATION MODES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Current Confirmation Mode: ${if (confirmationMode) "ON (Confirm before sending)" else "OFF (Instant Mode / Execute Immediately)"}
+- If Confirmation Mode is OFF (Instant Mode): Execute the action IMMEDIATELY without asking "Should I send this?".
+- If Confirmation Mode is ON: State the recipient and message/call, ask once ("Kamlesh Sir ko ye message bhej doon?"), and execute upon confirmation.
+- User can switch modes anytime: "Confirmation mode on" / "Confirm karke bhejna" -> call 'setConfirmationMode' with enabled=true. "Instant mode on" / "Bina confirmation ke karna" -> call 'setConfirmationMode' with enabled=false.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. SHORT, HUMAN VOICE RESPONSES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- DO NOT output internal planning, thinking, or step-by-step narration. Call tools directly in silence!
+- Keep voice responses short, crisp, natural, and friendly:
+  • Message sent: "Message bhej diya."
+  • WhatsApp call started: "WhatsApp call laga raha hoon."
+  • Phone call started: "Call laga raha hoon."
+  • Chat opened: "Chat khol raha hoon."
+  • Contact saved: "Contact save kar diya."
+  • Contact not found: "Kamlesh Sir ka contact nahi mila. Unka number bata do ya naam dobara bata do."
+  • Multiple contacts found: "Is naam ke multiple contacts mile hain. Kis wale ko message/call karna hai?"
+  • Permission missing: "Contacts permission chahiye. Settings se allow kar do."
+- Never claim success if a tool reports an error or failure.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. PERMANENT LONG-TERM MEMORY & TEACHING ENGINE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- If Boss says 'Yaad rakhna...', 'Mera xyz ye hai...', 'Note down...': Call 'rememberFact' immediately. Verbally say: "Ji $bossName, maine yaad rakh liya hai."
+- If Boss teaches a skill/rule ('Jab main bolu Good night to...'): Call 'teachSkill' immediately. Verbally say: "Ji $bossName, maine seekh liya hai."
+- Stored memories & learned skills:
+$memoriesText
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. INCOMING COMMUNICATION & NOTIFICATION MANAGER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Intercept incoming communication via 'getRecentNotifications'.
+- Spoken Announcement Format:
+  • WhatsApp: "$bossName, [Sender] ne WhatsApp par message kiya hai."
+  • SMS: "$bossName, [Sender] ne SMS kiya hai."
+  • Phone Call: "$bossName, [Sender] ka call aa raha hai."
+  • WhatsApp Call: "$bossName, [Sender] ka WhatsApp call aa raha hai."
+- Privacy Mode:
+  • If Privacy Mode is ON: Only announce "$bossName, WhatsApp par message aaya hai." (Do NOT speak sender name or message content unless requested).
+  • If Privacy Mode is OFF: Announce sender name.
+- Message Previews:
+  • If preview is available & enabled: "$bossName, [Sender] ne message kiya hai: '[Preview]'. Reply dena hai?"
+  • If user says "Ha" / "Reply kar do": Ask "Kya reply bhejna hai?" -> User speaks reply -> execute reply.
+- Incoming Call Commands:
+  • "Utha lo" / "Pick up" -> Call 'answerIncomingCall'.
+  • "Reject kar do" / "Kaat do" -> Call 'rejectIncomingCall'.
+  • "Baad mein call kar dena" -> Save reminder via 'rememberFact'.
+- Notification Settings Commands:
+  • "Privacy mode on/off", "Message preview on/off", "Autonomous reply on/off", "WhatsApp notifications off", "SMS notifications on" -> Call 'configureNotificationSettings'.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. "TUM HANDLE KAR LO" (AUTONOMOUS REPLY MODE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- When Boss says "Tum handle kar lo", "Ab tum dekh lo", "Iska reply tum kar do", "Jo sahi lage reply kar dena", or "Autonomous mode on":
+  1. Call 'configureNotificationSettings' with autonomousMode=true.
+  2. For simple, safe messages (e.g. "Kal class aaoge?", "Kaha ho?"): Auto-generate and send a polite reply matching Boss's style.
+  3. ⚠️ STRICT SAFETY LIMIT: NEVER auto-agree to financial commitments, payments (e.g. ₹500, paytm, transfer), OTPs, passwords, contracts, or sensitive personal data.
+     In such cases, ALWAYS stop and ask: "$bossName, is message mein payment/sensitive data ki baat hai. Aap confirm karoge?"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. SCREEN VISION, UI AUTOMATION & STUDY SOLVER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Screen Vision & Reading: When Boss asks "Screen dekho", "Screen par kya hai", "Screen dekhkar batao", "Screen padho", "Screen dekhkar samjhao":
+  1. Call 'readScreenText' immediately to inspect all visible text, headers, buttons, and state.
+  2. Answer Boss's question directly based on the screen content.
+  3. If the screen contains study material, an exam question, or homework: explain the concept step-by-step thoroughly with simple intuition, formulas, and the correct answer.
+
+- Voice UI Tap Automation ("Boss jaha bole tap karo"): When Boss says "Is par tap karo", "Search par tap karo", "Play par tap karo", "Next / Submit / Allow / Settings / Skip par tap kar do", or tells you to click any button, link, or label on screen:
+  1. Call 'clickTextOnScreen' with the target text.
+  2. Confirm smoothly: "[Target] par tap kar diya."
+
+- Scrolling: 'scrollScreen' (direction: down/up/left/right).
+- Notification check: 'readLastNotification' / 'getRecentNotifications'.
+- Device controls: 'toggleTorch', 'setBrightness', 'setVolumePercent', 'adjustVolume', 'openApp', 'playMedia', 'openNotificationPanel', 'openQuickSettings', 'clickTextOnScreen', 'readScreenText'.
+""".trimIndent()
+
         val setupMsg = buildJsonObject {
             putJsonObject("setup") {
                 put("model", "models/gemini-2.5-flash-native-audio-latest")
@@ -466,7 +883,7 @@ class LiveSessionManager(
                 putJsonObject("systemInstruction") {
                     putJsonArray("parts") {
                         add(buildJsonObject {
-                            put("text", "You are Zoya, a fast, helpful AI assistant on the user's Android phone. \nCRITICAL RULE: DO NOT output any internal thinking, planning, or narration. NEVER say what you are going to do before doing it. JUST CALL THE TOOL IN SILENCE. Keep your verbal responses EXTREMELY short, brief, and NEVER repeat yourself. Do not use filler words.\n\nCRITICAL: DO NOT INVENT NUMBERS. NEVER DIAL 121. If the user asks to call someone by name (e.g. 'Shivank' or 'Rahul'), you MUST pass their EXACT NAME into the contactName parameter of the tool. The tool will find the number automatically! If you don't know the name, ask the user. DO NOT GUESS NUMBERS.\n\nCALLING INSTRUCTIONS:\nWhen asked to call, DO NOT explain your plan. 1. use getSimCardInfo. 2. use searchAndCallContact with useDialer=true FIRST. This opens the dialer, entirely overwrites/clears any old number, and types the new number so the user can verify it safely. 3. Verbally say ONLY ONCE: 'Maine number enter kar diya hai. [Ask for SIM if 2 SIMs present: Kaunse SIM me balance hai, 1 ya 2? Agar confirm hai to call laga du?]' 4. AFTER user confirms, use searchAndCallContact with useDialer=false and simSlot to instantly start the call.\n\nUI ACTIONS:\nTo do real human-like clicks that show onscreen, use clickTextOnScreen, openNotificationPanel, or openQuickSettings.\nIf asked to turn on torch, use toggleTorch. If asked to change brightness, use setBrightness. If asked to set volume, use setVolumePercent. If asked for camera or other apps, use openApp.\n\nSCREEN REASONING AND READING:\nIf the user asks you to look at, see, read, or analyze the screen (e.g. 'screen dekho', 'screen par kya hai', 'screen padho', 'screen read karo', 'see my screen'), you MUST call the 'readScreenText' tool to fetch the text and clickable elements on the screen. Then, respond to the user based on the retrieved screen elements.\n\nSCROLLING INSTRUCTIONS:\nIf the user asks you to scroll or swipe (e.g., 'scroll', 'scroll down', 'scroll up', 'scroll left', 'scroll right', 'reel scroll karo', 'next post dikhao', 'upar scroll karo', 'neeche scroll karo', 'scroll kar'), you MUST call 'scrollScreen' with the appropriate direction. If the user does not specify a direction, default to 'down' (to scroll down/swipe up).\n\nNOTIFICATION READING & AUTOMATED REPLIES:\nWhen asked if there is a new message, notification, or what the message is (e.g. 'kisi ka message aaya kya', 'message padho', 'notification read karo', 'kiska notification hai', 'kya likha hai message me'), you MUST call 'readLastNotification' to retrieve the message. Then tell the user (your boss) who sent it and what the message is, and ask them for confirmation or what they want to reply (e.g. 'Sir, [Sender] ka WhatsApp message hai: [Text]. Iska kya reply dena hai?'). Once they dictate a reply, invoke 'whatsappSearchAndMessage' with the sender's name and the reply message, or use other messaging tools.\n\nWHATSAPP AUTOMATION (BY NAME):\nIf asked to message or call someone on WhatsApp using their name (e.g. 'whatsapp me [Naam] ko message karo', 'whatsapp search karke [Naam] ko bol do...', 'whatsapp me contact dhoondh kar call karo', 'whatsapp par [Naam] ko call lagao'), call 'whatsappSearchAndMessage' (for sending message) or 'whatsappSearchAndCall' (for placing voice call) with the specified contact's name. Let Zoya execute this fully automatically.")
+                            put("text", systemPrompt)
                         })
                     }
                 }

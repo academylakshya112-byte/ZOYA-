@@ -39,6 +39,38 @@ class ToolExecutionEngine(private val context: Context) {
                     val query = args["query"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing query"
                     searchYouTube(query)
                 }
+                "playFavoriteSong" -> {
+                    val prefs = context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE)
+                    val song = prefs.getString("favorite_song", "") ?: ""
+                    val app = prefs.getString("preferred_music_app", "YT Music") ?: "YT Music"
+                    if (song.isBlank()) {
+                        "No favorite song configured in Settings yet. Please set it in Settings."
+                    } else {
+                        if (app.equals("Spotify", ignoreCase = true)) {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$song")).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                context.startActivity(intent)
+                                "Playing favorite song '$song' on Spotify."
+                            } catch (e: Exception) {
+                                searchYouTube(song)
+                            }
+                        } else {
+                            searchYouTube(song)
+                        }
+                    }
+                }
+                "triggerSosEmergency" -> {
+                    val list = com.example.model.SosContactsManager.getSosContacts(context)
+                    if (list.isEmpty()) {
+                        "No SOS contacts saved in Settings. Please add an SOS contact in Settings first."
+                    } else {
+                        val sos = list.first()
+                        callContact(sos.phone, false, null)
+                        "Initiating emergency SOS call to ${sos.name} (${sos.phone})."
+                    }
+                }
                 "adjustVolume" -> {
                     val direction = args["direction"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing direction (up/down/mute/unmute/max)"
                     adjustSystemVolume(direction)
@@ -97,6 +129,82 @@ class ToolExecutionEngine(private val context: Context) {
                     val direction = args["direction"]?.jsonPrimitive?.content ?: "down"
                     val success = com.example.accessibility.ZoyaAccessibilityService.scrollScreen(direction)
                     if (success) "Scrolled screen $direction." else "Failed to scroll screen."
+                }
+                "rememberFact" -> {
+                    val topic = args["topic"]?.jsonPrimitive?.content ?: "General"
+                    val fact = args["fact"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing fact"
+                    com.example.memory.MemoryManager.saveFact(context, topic, fact)
+                }
+                "teachSkill" -> {
+                    val trigger = args["trigger"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing trigger"
+                    val actionOrRule = args["actionOrRule"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing actionOrRule"
+                    com.example.memory.MemoryManager.teachSkill(context, trigger, actionOrRule)
+                }
+                "getLearnedMemories" -> {
+                    com.example.memory.MemoryManager.getMemoriesSummary(context)
+                }
+                "forgetMemory" -> {
+                    val key = args["key"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing key"
+                    com.example.memory.MemoryManager.forgetMemory(context, key)
+                }
+                "sendSmsMessage" -> {
+                    val contactOrNumber = args["contactNameOrNumber"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing contactNameOrNumber"
+                    val message = args["message"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing message"
+                    sendSms(contactOrNumber, message)
+                }
+                "findContact" -> {
+                    val contactName = args["contactName"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing contactName"
+                    val matches = findContacts(contactName)
+                    if (matches.isEmpty()) {
+                        "Contact '$contactName' nahi mila. Unka number bata do ya naam dobara bata do."
+                    } else if (matches.size == 1) {
+                        "Contact mil gaya: ${matches.first().first} (${matches.first().second})"
+                    } else {
+                        val names = matches.joinToString("\n") { "- ${it.first}: ${it.second}" }
+                        "Is naam ke multiple contacts mile hain:\n$names\nKis wale ko select karna hai?"
+                    }
+                }
+                "getContactNumbers" -> {
+                    val contactName = args["contactName"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing contactName"
+                    val matches = findContacts(contactName)
+                    if (matches.isEmpty()) {
+                        "Contact '$contactName' ka koi number nahi mila."
+                    } else {
+                        val numbers = matches.joinToString(", ") { "${it.first}: ${it.second}" }
+                        "$contactName ka phone number: $numbers"
+                    }
+                }
+                "openWhatsAppChat" -> {
+                    val contactNameOrNumber = args["contactNameOrNumber"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing contactNameOrNumber"
+                    openWhatsAppChat(contactNameOrNumber)
+                }
+                "saveContact" -> {
+                    val name = args["name"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing name"
+                    val number = args["number"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing number"
+                    saveContact(name, number)
+                }
+                "setConfirmationMode" -> {
+                    val enabledStr = args["enabled"]?.jsonPrimitive?.content ?: "true"
+                    val enabled = enabledStr.toBooleanStrictOrNull() ?: true
+                    val prefs = context.getSharedPreferences("ZoyaPrefs", android.content.Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("confirmation_mode", enabled).apply()
+                    if (enabled) "Confirmation mode ON ho gaya hai. Ab message bhejne ya call lagane se pehle aapse pucha jayega."
+                    else "Instant mode ON ho gaya hai. Ab bina confirmation ke turant execute kiya jayega."
+                }
+                "getRecentNotifications" -> {
+                    com.example.notification.NotificationManagerHelper.getRecentSummary()
+                }
+                "configureNotificationSettings" -> {
+                    configureNotificationSettings(args)
+                }
+                "getNotificationSettings" -> {
+                    getNotificationSettings()
+                }
+                "answerIncomingCall" -> {
+                    answerIncomingCall()
+                }
+                "rejectIncomingCall" -> {
+                    rejectIncomingCall()
                 }
                 "getSimCardInfo" -> {
                     getSimCardInfo()
@@ -200,6 +308,20 @@ class ToolExecutionEngine(private val context: Context) {
         }
     }
 
+    private fun normalizePhoneNumber(rawNumber: String): String {
+        val prefs = context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE)
+        val countryCodePref = prefs.getString("country_code", "India (+91)") ?: "India (+91)"
+        val defaultCountryCode = Regex("\\+?([0-9]{1,4})").find(countryCodePref)?.groupValues?.get(1) ?: "91"
+        
+        val digits = rawNumber.replace(Regex("[^0-9]"), "")
+        return when {
+            digits.length == 10 -> defaultCountryCode + digits
+            digits.length == 11 && digits.startsWith("0") -> defaultCountryCode + digits.substring(1)
+            digits.length >= 11 -> digits
+            else -> digits
+        }
+    }
+
     private fun sendWhatsApp(nameOrNumber: String, message: String): String {
         if (nameOrNumber == "121" || nameOrNumber == "*121#") {
             return "ERROR: You tried to use 121 instead of the contact name. DO NOT invent numbers. Use the exact contact name provided by the user."
@@ -207,31 +329,40 @@ class ToolExecutionEngine(private val context: Context) {
 
         val isNumber = nameOrNumber.count { it.isDigit() } >= 7 || nameOrNumber.matches(Regex("^[0-9+\\-*#]+$"))
         
-        val number = if (isNumber) {
-            nameOrNumber
-        } else {
-            val matches = findContacts(nameOrNumber)
-            if (matches.isEmpty()) return "Could not find a phone number for '$nameOrNumber'. Please ask the user for the correct name."
-            matches.first().second
+        if (isNumber) {
+            val cleanNumber = normalizePhoneNumber(nameOrNumber)
+            val url = "https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                com.example.accessibility.ZoyaAccessibilityService.startWhatsAppSendAutoClick(message)
+                context.startActivity(intent)
+                return "Opening WhatsApp and sending message to $nameOrNumber."
+            } catch (e: Exception) {
+                return com.example.accessibility.ZoyaAccessibilityService.startWhatsAppAutomation(nameOrNumber, message, "message")
+            }
         }
-        
-        // WhatsApp URLs formatting: numbers should typically not have spaces or +. 
-        // We'll strip non-digits. (Country code may be required, assume it's attached or it will just try to prompt a chat)
-        val cleanNumber = number.replace(Regex("[^0-9+]"), "")
-        
-        val url = "https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}"
-        val intent = Intent(Intent.ACTION_VIEW)
-        intent.data = Uri.parse(url)
-        intent.setPackage("com.whatsapp")
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        
-        try {
-            com.example.accessibility.ZoyaAccessibilityService.shouldAutoClick = true
-            context.startActivity(intent)
-            return "I am automatically sending the WhatsApp message to $nameOrNumber."
-        } catch(e: Exception) {
-             com.example.accessibility.ZoyaAccessibilityService.shouldAutoClick = false
-             return "WhatsApp may not be installed."
+
+        val matches = findContacts(nameOrNumber)
+        if (matches.isNotEmpty()) {
+            val contactNumber = matches.first().second
+            val cleanNumber = normalizePhoneNumber(contactNumber)
+            val url = "https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                com.example.accessibility.ZoyaAccessibilityService.startWhatsAppSendAutoClick(message)
+                context.startActivity(intent)
+                return "Opening WhatsApp chat for ${matches.first().first} and sending message: '$message'"
+            } catch (e: Exception) {
+                return com.example.accessibility.ZoyaAccessibilityService.startWhatsAppAutomation(nameOrNumber, message, "message")
+            }
+        } else {
+            return com.example.accessibility.ZoyaAccessibilityService.startWhatsAppAutomation(nameOrNumber, message, "message")
         }
     }
 
@@ -252,16 +383,12 @@ class ToolExecutionEngine(private val context: Context) {
     }
 
     private fun searchYouTube(query: String): String {
-        val intent = Intent(Intent.ACTION_SEARCH)
-        intent.setPackage("com.google.android.youtube")
-        intent.putExtra("query", query)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
-            context.startActivity(intent)
-            return "Opened YouTube with search query: $query"
-        } catch (e: Exception) {
-            return "YouTube app not found on device."
+        val cleanQuery = if (query.isBlank() || query.equals("song", ignoreCase = true) || query.equals("hindi song", ignoreCase = true) || query.equals("achha song", ignoreCase = true)) {
+            "Trending Hindi Hit Songs 2026"
+        } else {
+            query
         }
+        return com.example.accessibility.ZoyaAccessibilityService.startYouTubePlayAutomation(cleanQuery, context)
     }
 
     private fun levenshtein(lhs: CharSequence, rhs: CharSequence): Int {
@@ -292,6 +419,23 @@ class ToolExecutionEngine(private val context: Context) {
             return emptyList()
         }
         
+        val initialResults = internalFindContacts(namePattern)
+        if (initialResults.isNotEmpty()) return initialResults
+
+        // If no match found, strip common titles/honorifics and search again
+        val normalized = namePattern.lowercase()
+            .replace(Regex("\\b(sir|ji|master|madam|mam|bhai|bhaiya|didi|uncle|aunty|dr|mr|mrs|prof)\\b", RegexOption.IGNORE_CASE), "")
+            .trim()
+            
+        if (normalized.isNotEmpty() && normalized != namePattern.lowercase().trim()) {
+            val fallbackResults = internalFindContacts(normalized)
+            if (fallbackResults.isNotEmpty()) return fallbackResults
+        }
+
+        return emptyList()
+    }
+
+    private fun internalFindContacts(namePattern: String): List<Pair<String, String>> {
         try {
             val fallbackUri = android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
             val fbProjection = arrayOf(
@@ -473,6 +617,227 @@ class ToolExecutionEngine(private val context: Context) {
         }
     }
 
+    private fun sendSms(contactOrNumber: String, message: String): String {
+        val isNumber = contactOrNumber.count { it.isDigit() } >= 7 || contactOrNumber.matches(Regex("^[0-9+\\-*#]+$"))
+        val number = if (isNumber) {
+            contactOrNumber
+        } else {
+            val matches = findContacts(contactOrNumber)
+            if (matches.isEmpty()) return "Could not find a phone number for '$contactOrNumber'. Please specify the number."
+            matches.first().second
+        }
+
+        val cleanNumber = number.replace(Regex("[^0-9+]"), "")
+
+        // 1. Direct SMS sending via SmsManager if SEND_SMS permission is available
+        if (context.checkSelfPermission(android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    context.getSystemService(android.telephony.SmsManager::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.telephony.SmsManager.getDefault()
+                }
+                val parts = smsManager.divideMessage(message)
+                if (parts.size > 1) {
+                    smsManager.sendMultipartTextMessage(cleanNumber, null, parts, null, null)
+                } else {
+                    smsManager.sendTextMessage(cleanNumber, null, message, null, null)
+                }
+                return "SMS sent successfully to $contactOrNumber ($cleanNumber): '$message'"
+            } catch (e: Exception) {
+                android.util.Log.e("ZoyaTools", "Direct SMS sending failed, opening SMS composer", e)
+            }
+        }
+
+        // 2. Fallback: Open SMS composer and trigger accessibility auto-click send
+        val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("smsto:$cleanNumber")
+            putExtra("sms_body", message)
+            putExtra(Intent.EXTRA_TEXT, message)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            com.example.accessibility.ZoyaAccessibilityService.startSmsSendAutoClick(message)
+            context.startActivity(smsIntent)
+            return "Opening SMS and sending message to $contactOrNumber ($cleanNumber): '$message'"
+        } catch (e: Exception) {
+            return "Failed to open SMS app: ${e.message}"
+        }
+    }
+
+    private fun openWhatsAppChat(contactNameOrNumber: String): String {
+        val isNumber = contactNameOrNumber.count { it.isDigit() } >= 7 || contactNameOrNumber.matches(Regex("^[0-9+\\-*#]+$"))
+        if (isNumber) {
+            val cleanNumber = normalizePhoneNumber(contactNameOrNumber)
+            val url = "https://api.whatsapp.com/send?phone=$cleanNumber"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return try {
+                context.startActivity(intent)
+                "Opening WhatsApp chat with $contactNameOrNumber."
+            } catch (e: Exception) {
+                com.example.accessibility.ZoyaAccessibilityService.startWhatsAppAutomation(contactNameOrNumber, null, "open")
+            }
+        } else {
+            val matches = findContacts(contactNameOrNumber)
+            if (matches.isNotEmpty()) {
+                val cleanNumber = normalizePhoneNumber(matches.first().second)
+                val url = "https://api.whatsapp.com/send?phone=$cleanNumber"
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    setPackage("com.whatsapp")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    context.startActivity(intent)
+                    return "Opening WhatsApp chat with ${matches.first().first}."
+                } catch (e: Exception) {}
+            }
+            return com.example.accessibility.ZoyaAccessibilityService.startWhatsAppAutomation(contactNameOrNumber, null, "open")
+        }
+    }
+
+    private fun saveContact(name: String, number: String): String {
+        if (name.isBlank() || number.isBlank()) {
+            return "Error: Name and phone number cannot be empty."
+        }
+        
+        if (context.checkSelfPermission(android.Manifest.permission.WRITE_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                val ops = ArrayList<android.content.ContentProviderOperation>()
+                
+                ops.add(android.content.ContentProviderOperation.newInsert(android.provider.ContactsContract.RawContacts.CONTENT_URI)
+                    .withValue(android.provider.ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                    .withValue(android.provider.ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                    .build())
+                    
+                ops.add(android.content.ContentProviderOperation.newInsert(android.provider.ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(android.provider.ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(android.provider.ContactsContract.Data.MIMETYPE, android.provider.ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                    .withValue(android.provider.ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, name)
+                    .build())
+                    
+                ops.add(android.content.ContentProviderOperation.newInsert(android.provider.ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(android.provider.ContactsContract.Data.RAW_CONTACT_ID, 0)
+                    .withValue(android.provider.ContactsContract.Data.MIMETYPE, android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                    .withValue(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER, number)
+                    .withValue(android.provider.ContactsContract.CommonDataKinds.Phone.TYPE, android.provider.ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
+                    .build())
+                    
+                context.contentResolver.applyBatch(android.provider.ContactsContract.AUTHORITY, ops)
+                return "Contact '$name' with number $number has been successfully saved."
+            } catch (e: Exception) {
+                android.util.Log.e("ZoyaTools", "ContentProvider save failed, falling back to Intent", e)
+            }
+        }
+        
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
+            putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name)
+            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            context.startActivity(intent)
+            "Opening contact saving screen for '$name' ($number)."
+        } catch (e: Exception) {
+            "Failed to save contact: ${e.message}"
+        }
+    }
+
+    private fun configureNotificationSettings(args: Map<String, kotlinx.serialization.json.JsonElement>): String {
+        val results = mutableListOf<String>()
+        args["privacyMode"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()?.let {
+            com.example.notification.NotificationManagerHelper.setPrivacyMode(context, it)
+            results.add("Privacy Mode: ${if (it) "ON" else "OFF"}")
+        }
+        args["messagePreviewMode"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()?.let {
+            com.example.notification.NotificationManagerHelper.setMessagePreviewEnabled(context, it)
+            results.add("Message Preview: ${if (it) "ON" else "OFF"}")
+        }
+        args["autonomousMode"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()?.let {
+            com.example.notification.NotificationManagerHelper.setAutonomousMode(context, it)
+            results.add("Autonomous 'Tum Handle Kar Lo' Mode: ${if (it) "ON" else "OFF"}")
+        }
+        args["replyStyle"]?.jsonPrimitive?.content?.let {
+            com.example.notification.NotificationManagerHelper.setReplyStyle(context, it)
+            results.add("Reply Style: $it")
+        }
+        args["monitorWhatsApp"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()?.let {
+            com.example.notification.NotificationManagerHelper.setAppMonitoring(context, "whatsapp", it)
+            results.add("WhatsApp Monitoring: ${if (it) "ON" else "OFF"}")
+        }
+        args["monitorSms"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()?.let {
+            com.example.notification.NotificationManagerHelper.setAppMonitoring(context, "sms", it)
+            results.add("SMS Monitoring: ${if (it) "ON" else "OFF"}")
+        }
+        return if (results.isNotEmpty()) {
+            "Notification settings updated: " + results.joinToString(", ")
+        } else {
+            "No settings changed."
+        }
+    }
+
+    private fun getNotificationSettings(): String {
+        val privacy = com.example.notification.NotificationManagerHelper.isPrivacyMode(context)
+        val preview = com.example.notification.NotificationManagerHelper.isMessagePreviewEnabled(context)
+        val autoMode = com.example.notification.NotificationManagerHelper.isAutonomousMode(context)
+        val replyStyle = com.example.notification.NotificationManagerHelper.getReplyStyle(context)
+        val waMon = com.example.notification.NotificationManagerHelper.isAppMonitored(context, "com.whatsapp")
+        val smsMon = com.example.notification.NotificationManagerHelper.isAppMonitored(context, "sms")
+
+        return """
+            Notification Settings:
+            - Privacy Mode: ${if (privacy) "ON (Only announce app, hide sender & text)" else "OFF (Announce sender)"}
+            - Message Preview Mode: ${if (preview) "ON (Read message preview)" else "OFF (Ask before reading)"}
+            - Autonomous Reply ('Tum handle kar lo'): ${if (autoMode) "ON (Safe auto-replies enabled for simple chats)" else "OFF (Manual confirmation required)"}
+            - Reply Style: $replyStyle
+            - WhatsApp Monitoring: ${if (waMon) "ON" else "OFF"}
+            - SMS Monitoring: ${if (smsMon) "ON" else "OFF"}
+        """.trimIndent()
+    }
+
+    private fun answerIncomingCall(): String {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try {
+                    val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
+                    telecomManager.acceptRingingCall()
+                    return "Incoming call answered."
+                } catch (e: Exception) {
+                    android.util.Log.e("ZoyaTools", "Failed to answer via TelecomManager", e)
+                }
+            }
+        }
+        // Fallback to accessibility click on screen
+        val clicked = com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Answer") ||
+                com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Accept") ||
+                com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Uthao")
+        return if (clicked) "Incoming call answered via accessibility." else "Unable to answer call: Permission or UI button not found."
+    }
+
+    private fun rejectIncomingCall(): String {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try {
+                    val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
+                    telecomManager.endCall()
+                    return "Incoming call rejected."
+                } catch (e: Exception) {
+                    android.util.Log.e("ZoyaTools", "Failed to reject via TelecomManager", e)
+                }
+            }
+        }
+        // Fallback to accessibility click on screen
+        val clicked = com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Decline") ||
+                com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Reject") ||
+                com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Dismiss") ||
+                com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Kaat do")
+        return if (clicked) "Incoming call declined." else "Call decline action executed."
+    }
+
     private fun getSimCardInfo(): String {
         if (context.checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return "Unable to determine SIM cards because READ_PHONE_STATE permission is lacking. Proceed assuming 1 SIM."
@@ -480,9 +845,9 @@ class ToolExecutionEngine(private val context: Context) {
         try {
             val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
             val phoneAccounts = telecomManager.callCapablePhoneAccounts
-            return "The device has \${phoneAccounts.size} active calling SIM cards."
+            return "The device has ${phoneAccounts.size} active calling SIM cards."
         } catch (e: Exception) {
-            return "Error determining SIM cards: \${e.message}. Proceed assuming 1 SIM."
+            return "Error determining SIM cards: ${e.message}. Proceed assuming 1 SIM."
         }
     }
 }
