@@ -4,7 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -75,6 +78,14 @@ class ToolExecutionEngine(private val context: Context) {
                     val direction = args["direction"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing direction (up/down/mute/unmute/max)"
                     adjustSystemVolume(direction)
                 }
+                "lockPhone" -> {
+                    val locked = com.example.core.MayaLockManager.lockPhone(context)
+                    if (locked) "Phone lock kar diya gaya hai." else "Phone lock karne ke liye Accessibility permission active honi chahiye."
+                }
+                "unlockPhone" -> {
+                    com.example.core.MayaLockManager.executeUnlockWorkflow(context)
+                    "Phone unlock workflow initiate kar diya gaya hai."
+                }
                 "toggleTorch" -> {
                     val state = args["state"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing state (on/off)"
                     toggleTorch(state)
@@ -129,6 +140,14 @@ class ToolExecutionEngine(private val context: Context) {
                     val direction = args["direction"]?.jsonPrimitive?.content ?: "down"
                     val success = com.example.accessibility.ZoyaAccessibilityService.scrollScreen(direction)
                     if (success) "Scrolled screen $direction." else "Failed to scroll screen."
+                }
+                "pressBack", "goBack" -> {
+                    val success = com.example.accessibility.ZoyaAccessibilityService.pressBack()
+                    if (success) "Piche (Back) chale gaye." else "Back action execute nahi ho paya."
+                }
+                "pressHome", "goHome" -> {
+                    val success = com.example.accessibility.ZoyaAccessibilityService.pressHome()
+                    if (success) "Home screen par aa gaye hain." else "Home action execute nahi ho paya."
                 }
                 "rememberFact" -> {
                     val topic = args["topic"]?.jsonPrimitive?.content ?: "General"
@@ -191,6 +210,11 @@ class ToolExecutionEngine(private val context: Context) {
                     if (enabled) "Confirmation mode ON ho gaya hai. Ab message bhejne ya call lagane se pehle aapse pucha jayega."
                     else "Instant mode ON ho gaya hai. Ab bina confirmation ke turant execute kiya jayega."
                 }
+                "replyToLatestNotification" -> {
+                    val replyMessage = args["replyMessage"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing replyMessage"
+                    val senderName = args["senderName"]?.jsonPrimitive?.content
+                    replyToLatestNotification(replyMessage, senderName)
+                }
                 "getRecentNotifications" -> {
                     com.example.notification.NotificationManagerHelper.getRecentSummary()
                 }
@@ -212,6 +236,33 @@ class ToolExecutionEngine(private val context: Context) {
                 "playMedia" -> {
                     val query = args["query"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing query"
                     playMedia(query)
+                }
+                "buildAndOpenWebsite" -> {
+                    val title = args["title"]?.jsonPrimitive?.content ?: "My Website"
+                    val htmlCode = args["htmlCode"]?.jsonPrimitive?.content ?: "<h1>Welcome</h1>"
+                    val openInChrome = args["openInChrome"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
+                    com.example.model.CodeStudioManager.buildAndLaunchWebsite(context, title, htmlCode, openInChrome)
+                }
+                "generateCode" -> {
+                    val language = args["language"]?.jsonPrimitive?.content ?: "KOTLIN"
+                    val title = args["title"]?.jsonPrimitive?.content ?: "Code Snippet"
+                    val code = args["code"]?.jsonPrimitive?.content ?: ""
+                    com.example.model.CodeStudioManager.displayCode(title, language, code)
+                }
+                "getMedicineInfo" -> {
+                    val medicineName = args["medicineName"]?.jsonPrimitive?.content ?: return@withContext "Error: Missing medicineName"
+                    com.example.model.MedicineKnowledgeEngine.searchMedicine(medicineName)
+                }
+                "getCurrentWeather" -> {
+                    val weather = com.example.model.LocationWeatherManager.refreshWeather(context, force = true)
+                    weather.summaryHinglish
+                }
+                "turnOffAssistant" -> {
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        kotlinx.coroutines.delay(1200)
+                        com.example.ZoyaForegroundService.stop(context)
+                    }
+                    "Assistant is shutting down."
                 }
                 else -> "Error: Tool $name not found."
             }
@@ -383,10 +434,17 @@ class ToolExecutionEngine(private val context: Context) {
     }
 
     private fun searchYouTube(query: String): String {
-        val cleanQuery = if (query.isBlank() || query.equals("song", ignoreCase = true) || query.equals("hindi song", ignoreCase = true) || query.equals("achha song", ignoreCase = true)) {
-            "Trending Hindi Hit Songs 2026"
+        val cleanQuery = if (query.isBlank() ||
+            query.contains("hindi song", ignoreCase = true) ||
+            query.contains("achha song", ignoreCase = true) ||
+            query.contains("badhiya song", ignoreCase = true) ||
+            query.equals("song", ignoreCase = true) ||
+            query.equals("gana", ignoreCase = true) ||
+            query.equals("gaana", ignoreCase = true) ||
+            query.equals("music", ignoreCase = true)) {
+            "Trending Hit Hindi Songs"
         } else {
-            query
+            query.trim()
         }
         return com.example.accessibility.ZoyaAccessibilityService.startYouTubePlayAutomation(cleanQuery, context)
     }
@@ -574,15 +632,7 @@ class ToolExecutionEngine(private val context: Context) {
     }
 
     private fun playMedia(query: String): String {
-        try {
-            val intent = Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-            intent.putExtra(android.app.SearchManager.QUERY, query)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            return "Started playing media for query: $query"
-        } catch (e: Exception) {
-            return "Failed to play media (no suitable app found): \${e.message}"
-        }
+        return searchYouTube(query)
     }
 
     private fun setVolumePercent(percent: Int): String {
@@ -836,6 +886,23 @@ class ToolExecutionEngine(private val context: Context) {
                 com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Dismiss") ||
                 com.example.accessibility.ZoyaAccessibilityService.clickTextOnScreen("Kaat do")
         return if (clicked) "Incoming call declined." else "Call decline action executed."
+    }
+
+    private fun replyToLatestNotification(replyMessage: String, targetSender: String?): String {
+        val comm = com.example.notification.NotificationManagerHelper.getLatestMessage(targetSender)
+        val sender = comm?.sender ?: com.example.accessibility.ZoyaAccessibilityService.lastNotificationSender ?: targetSender
+
+        if (sender.isNullOrBlank() || sender.equals("Someone", ignoreCase = true)) {
+            return "No recent incoming message found to reply to. Please specify who you would like to send a message to."
+        }
+
+        val app = comm?.app ?: if (com.example.accessibility.ZoyaAccessibilityService.lastNotificationPackage?.contains("whatsapp", ignoreCase = true) == true) "WhatsApp" else "SMS"
+
+        return if (app.equals("WhatsApp", ignoreCase = true) || comm?.type == "whatsapp_message") {
+            sendWhatsApp(sender, replyMessage)
+        } else {
+            sendSms(sender, replyMessage)
+        }
     }
 
     private fun getSimCardInfo(): String {

@@ -162,11 +162,12 @@ object NotificationManagerHelper {
             recentCommunications.removeAt(recentCommunications.size - 1)
         }
 
-        // Trigger call announcer for incoming calls
-        if (commType == "whatsapp_call") {
-            CallAnnouncer.announceWhatsAppCall(context, comm.sender)
-        } else if (commType == "phone_call") {
-            CallAnnouncer.announceIncomingPhoneCall(context, comm.sender)
+        // Trigger call & message announcer for incoming events
+        when (commType) {
+            "whatsapp_call" -> CallAnnouncer.announceWhatsAppCall(context, comm.sender)
+            "phone_call" -> CallAnnouncer.announceIncomingPhoneCall(context, comm.sender)
+            "whatsapp_message" -> CallAnnouncer.announceIncomingMessage(context, comm.sender, comm.preview, isWhatsApp = true)
+            "sms" -> CallAnnouncer.announceIncomingMessage(context, comm.sender, comm.preview, isWhatsApp = false)
         }
 
         // Trigger live spoken announcement callback
@@ -177,6 +178,102 @@ object NotificationManagerHelper {
         }
 
         return comm
+    }
+
+    fun processRawNotification(context: Context, packageName: String, rawTitle: String, rawText: String): IncomingCommunication? {
+        if (packageName == context.packageName || packageName == "android") return null
+        if (!isAppMonitored(context, packageName)) return null
+
+        val title = rawTitle.trim()
+        val text = rawText.trim()
+        if (title.isBlank() && text.isBlank()) return null
+
+        // Determine App & Communication Type
+        val (appName, commType) = when {
+            packageName.contains("com.whatsapp") || packageName.contains("com.whatsapp.w4b") -> {
+                val isCall = text.contains("Incoming voice call", ignoreCase = true) 
+                    || text.contains("Incoming video call", ignoreCase = true) 
+                    || title.contains("WhatsApp call", ignoreCase = true)
+                if (isCall) Pair("WhatsApp", "whatsapp_call") else Pair("WhatsApp", "whatsapp_message")
+            }
+            packageName.contains("messaging") || packageName.contains("mms") || packageName.contains("sms") -> {
+                Pair("SMS", "sms")
+            }
+            packageName.contains("dialer") || packageName.contains("phone") -> {
+                Pair("Phone", "phone_call")
+            }
+            else -> Pair(packageName, "other")
+        }
+
+        // Deduplication
+        val hashKey = "$packageName|$title|$text"
+        val now = System.currentTimeMillis()
+        val lastSeen = seenMessageHashes[hashKey]
+        if (lastSeen != null && (now - lastSeen) < 10000) {
+            return null
+        }
+        seenMessageHashes[hashKey] = now
+
+        val lowerText = text.lowercase()
+        val isFinancialOrSensitive = lowerText.contains("₹") || 
+            lowerText.contains("rs.") || 
+            lowerText.contains("otp") || 
+            lowerText.contains("password") || 
+            lowerText.contains("pin") || 
+            lowerText.contains("bank") || 
+            lowerText.contains("account") || 
+            lowerText.contains("transfer")
+
+        val priority = when {
+            commType == "phone_call" || commType == "whatsapp_call" -> "IMPORTANT"
+            isFinancialOrSensitive -> "IMPORTANT"
+            else -> "NORMAL"
+        }
+
+        val comm = IncomingCommunication(
+            id = "raw_${now}",
+            sender = if (title.isNotBlank()) title else "Someone",
+            app = appName,
+            packageName = packageName,
+            type = commType,
+            preview = text,
+            timestamp = now,
+            isSensitiveOrFinancial = isFinancialOrSensitive,
+            priority = priority
+        )
+
+        // Store in history
+        recentCommunications.add(0, comm)
+        if (recentCommunications.size > MAX_HISTORY) {
+            recentCommunications.removeAt(recentCommunications.size - 1)
+        }
+
+        // Announce
+        when (commType) {
+            "whatsapp_call" -> CallAnnouncer.announceWhatsAppCall(context, comm.sender)
+            "phone_call" -> CallAnnouncer.announceIncomingPhoneCall(context, comm.sender)
+            "whatsapp_message" -> CallAnnouncer.announceIncomingMessage(context, comm.sender, comm.preview, isWhatsApp = true)
+            "sms" -> CallAnnouncer.announceIncomingMessage(context, comm.sender, comm.preview, isWhatsApp = false)
+        }
+
+        try {
+            onNewCommunicationReceived?.invoke(comm)
+        } catch (e: Exception) {
+            Log.e("NotificationHelper", "Error in announcement callback", e)
+        }
+
+        return comm
+    }
+
+    fun getLatestMessage(optionalSender: String? = null): IncomingCommunication? {
+        if (optionalSender.isNullOrBlank()) {
+            return recentCommunications.firstOrNull { it.type == "whatsapp_message" || it.type == "sms" }
+        }
+        val cleanQuery = optionalSender.trim().lowercase()
+        return recentCommunications.firstOrNull {
+            (it.type == "whatsapp_message" || it.type == "sms") &&
+            (it.sender.lowercase().contains(cleanQuery) || cleanQuery.contains(it.sender.lowercase()))
+        } ?: recentCommunications.firstOrNull { it.type == "whatsapp_message" || it.type == "sms" }
     }
 
     fun getRecentSummary(): String {

@@ -27,6 +27,7 @@ sealed class DrawerNavDestination(
 ) {
     object Home : DrawerNavDestination("home", "Home", Icons.Default.Home)
     object MayaHome : DrawerNavDestination("maya_home", "Maya Home", Icons.Default.LocationOn)
+    object MayaLock : DrawerNavDestination("maya_lock", "Lock & Security 🔐", Icons.Default.Security)
     object Persona : DrawerNavDestination("persona", "Persona Mode 🎭", Icons.Default.Face)
     object Settings : DrawerNavDestination("settings", "Settings", Icons.Default.Settings)
     object Documents : DrawerNavDestination("documents", "Documents", Icons.Default.FormatListBulleted)
@@ -44,6 +45,7 @@ fun ZoyaDrawerContent(
     val items = listOf(
         DrawerNavDestination.Home,
         DrawerNavDestination.MayaHome,
+        DrawerNavDestination.MayaLock,
         DrawerNavDestination.Persona,
         DrawerNavDestination.Settings,
         DrawerNavDestination.Documents,

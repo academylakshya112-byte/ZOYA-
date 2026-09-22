@@ -85,6 +85,30 @@ object CallAnnouncer {
         getPrefs(context).edit().putBoolean("whatsapp_call_announcement_enabled", enabled).apply()
     }
 
+    fun isMessageAnnouncementEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean("message_announcement_enabled", true)
+    }
+
+    fun setMessageAnnouncementEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean("message_announcement_enabled", enabled).apply()
+    }
+
+    fun isWhatsAppMessageAnnouncementEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean("whatsapp_msg_announcement_enabled", true)
+    }
+
+    fun setWhatsAppMessageAnnouncementEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean("whatsapp_msg_announcement_enabled", enabled).apply()
+    }
+
+    fun isSmsMessageAnnouncementEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean("sms_msg_announcement_enabled", true)
+    }
+
+    fun setSmsMessageAnnouncementEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean("sms_msg_announcement_enabled", enabled).apply()
+    }
+
     fun isRepeatEnabled(context: Context): Boolean {
         return getPrefs(context).getBoolean("call_announcement_repeat", true)
     }
@@ -220,52 +244,83 @@ object CallAnnouncer {
     }
 
     private fun speakPhrase(text: String) {
-        try {
-            if (tts == null || !isTtsReady) {
-                Log.w(TAG, "TTS not fully initialized, waiting/retrying...")
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val params = Bundle()
-                params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_VOICE_CALL)
-                params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "CALL_ANNOUNCE_${System.currentTimeMillis()}")
-            } else {
-                val params = HashMap<String, String>()
-                params[TextToSpeech.Engine.KEY_PARAM_STREAM] = android.media.AudioManager.STREAM_VOICE_CALL.toString()
-                @Suppress("DEPRECATION")
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params)
-            }
-            Log.d(TAG, "Spoke call announcement: $text")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error speaking phrase", e)
-        }
+        com.example.core.VoiceOutputManager.speak(text, com.example.core.SpeechPriority.CALL_ANNOUNCEMENT)
+        Log.d(TAG, "Routed call announcement to VoiceOutputManager: $text")
     }
 
     fun speakText(text: String) {
-        scope.launch {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val params = Bundle()
-                    params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
-                    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "STUDY_EXPLAIN_${System.currentTimeMillis()}")
-                } else {
-                    val params = HashMap<String, String>()
-                    params[TextToSpeech.Engine.KEY_PARAM_STREAM] = android.media.AudioManager.STREAM_MUSIC.toString()
-                    @Suppress("DEPRECATION")
-                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error speaking text", e)
-            }
-        }
+        com.example.core.VoiceOutputManager.speak(text, com.example.core.SpeechPriority.NORMAL)
     }
 
     fun stopSpeaking() {
-        try {
-            tts?.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping TTS", e)
+        com.example.core.VoiceOutputManager.stopSpeaking()
+    }
+
+    fun announceIncomingMessage(context: Context, senderName: String, messageText: String, isWhatsApp: Boolean) {
+        if (!isMessageAnnouncementEnabled(context)) {
+            Log.d(TAG, "Message announcement disabled globally in settings.")
+            return
+        }
+        if (isWhatsApp && !isWhatsAppMessageAnnouncementEnabled(context)) {
+            Log.d(TAG, "WhatsApp message announcement disabled in settings.")
+            return
+        }
+        if (!isWhatsApp && !isSmsMessageAnnouncementEnabled(context)) {
+            Log.d(TAG, "SMS message announcement disabled in settings.")
+            return
+        }
+
+        val prefs = context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE)
+        val bossName = prefs.getString("boss_name", "Boss") ?: "Boss"
+        val privacyMode = NotificationManagerHelper.isPrivacyMode(context)
+        val previewEnabled = NotificationManagerHelper.isMessagePreviewEnabled(context)
+
+        val cleanSender = if (senderName.isBlank() || senderName.equals("WhatsApp", ignoreCase = true) || senderName.equals("Messages", ignoreCase = true)) {
+            "Someone"
+        } else {
+            senderName.trim()
+        }
+
+        val msgKey = "${if (isWhatsApp) "WA_MSG" else "SMS"}_${cleanSender}_$messageText"
+        val now = System.currentTimeMillis()
+        if (msgKey == lastAnnouncedCallId && (now - lastAnnouncementTime) < 4000) {
+            return
+        }
+        lastAnnouncedCallId = msgKey
+        lastAnnouncementTime = now
+
+        init(context)
+
+        val appLanguage = prefs.getString("app_language", "Hinglish") ?: "Hinglish"
+        val isBhojpuri = appLanguage.contains("Bhojpuri", ignoreCase = true)
+        val appLabel = if (isWhatsApp) "WhatsApp" else "SMS"
+
+        val phrase = if (isBhojpuri) {
+            when {
+                privacyMode -> "$bossName, $appLabel पर नया संदेश आइल बा। का जवाब दे दीं?"
+                !previewEnabled || messageText.isBlank() -> "$bossName, $cleanSender के $appLabel संदेश आइल बा। का जवाब दे दीं?"
+                else -> "$bossName, $cleanSender के $appLabel संदेश आइल बा: '$messageText'। का जवाब दे दीं?"
+            }
+        } else {
+            when {
+                privacyMode -> "$bossName, $appLabel par naya message aaya hai. Kya reply de du?"
+                !previewEnabled || messageText.isBlank() -> "$bossName, $cleanSender ka $appLabel message aaya hai. Kya reply de du?"
+                else -> "$bossName, $cleanSender ka $appLabel message aaya hai: '$messageText'. Kya reply de du?"
+            }
+        }
+
+        scope.launch {
+            delay(150)
+            speakPhrase(phrase)
+
+            // Inject prompt to live session
+            try {
+                ZoyaForegroundService.activeService?.sendTextMessage(
+                    "[SYSTEM NOTIFICATION: New $appLabel message from '$cleanSender': \"$messageText\". If boss asks you to reply, handle it, or chat back (e.g. 'tum ise handle kar lo' / 'reply kar do'), use replyToLatestNotification or sendWhatsAppMessage/sendSmsMessage to execute.]"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error notifying live session", e)
+            }
         }
     }
 
@@ -277,6 +332,23 @@ object CallAnnouncer {
             "$bossName, $testName ka WhatsApp call aa raha hai."
         } else {
             "$bossName, $testName ka call aa raha hai."
+        }
+        init(context)
+        scope.launch {
+            delay(200)
+            speakPhrase(phrase)
+        }
+    }
+
+    fun testMessageAnnouncement(context: Context, isWhatsApp: Boolean = true) {
+        val prefs = context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE)
+        val bossName = prefs.getString("boss_name", "Boss") ?: "Boss"
+        val testName = if (isWhatsApp) "Kamlesh Sir" else "Rahul"
+        val testMsg = if (isWhatsApp) "Hello boss, kal coaching aana hai" else "OTP 482910 for login"
+        val phrase = if (isWhatsApp) {
+            "$bossName, $testName ka WhatsApp message aaya hai: '$testMsg'. Kya reply de du?"
+        } else {
+            "$bossName, $testName ka SMS message aaya hai: '$testMsg'. Kya reply de du?"
         }
         init(context)
         scope.launch {

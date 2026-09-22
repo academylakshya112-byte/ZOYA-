@@ -135,6 +135,22 @@ class LiveSessionManager(
                 }
             })
             add(buildJsonObject {
+                put("name", "lockPhone")
+                put("description", "Lock the phone screen securely upon user voice command ('phone lock karo', 'lock the phone', 'screen lock karo')")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "unlockPhone")
+                put("description", "Unlock or wake the phone and trigger the Maya unlock workflow ('phone unlock karo', 'unlock the phone', 'screen unlock karo')")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
                 put("name", "adjustVolume")
                 put("description", "Adjust the device volume.")
                 putJsonObject("parameters") {
@@ -514,6 +530,24 @@ class LiveSessionManager(
                 }
             })
             add(buildJsonObject {
+                put("name", "replyToLatestNotification")
+                put("description", "Reply to the latest incoming WhatsApp or SMS message/notification. Use this immediately when Boss says 'tum ise handle kar lo', 'reply kar do', 'tum baat kar lo', 'unko reply kar do', etc.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("replyMessage") {
+                            put("type", "STRING")
+                            put("description", "The message text to reply back to the contact.")
+                        }
+                        putJsonObject("senderName") {
+                            put("type", "STRING")
+                            put("description", "Optional contact/sender name if specified.")
+                        }
+                    }
+                    putJsonArray("required") { add("replyMessage") }
+                }
+            })
+            add(buildJsonObject {
                 put("name", "answerIncomingCall")
                 put("description", "Answer an incoming phone call or WhatsApp call when instructed by user (e.g. 'Utha lo', 'Call pick kar').")
                 putJsonObject("parameters") {
@@ -540,6 +574,80 @@ class LiveSessionManager(
             add(buildJsonObject {
                 put("name", "triggerSosEmergency")
                 put("description", "Trigger emergency SOS call to the favorite SOS contacts saved in Settings.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "buildAndOpenWebsite")
+                put("description", "Generate a full-featured, responsive, beautiful website (HTML/CSS/JS) and automatically open it in Google Chrome for the user to see live, while streaming the code into the Zoya UI background.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("title") {
+                            put("type", "STRING")
+                            put("description", "The title or name of the website (e.g. 'Personal Portfolio', 'Animated Calculator', 'Game Hub', 'Coaching Website').")
+                        }
+                        putJsonObject("htmlCode") {
+                            put("type", "STRING")
+                            put("description", "Complete, beautiful, responsive HTML code with inline <style> CSS and <script> JavaScript logic.")
+                        }
+                        putJsonObject("openInChrome") {
+                            put("type", "BOOLEAN")
+                            put("description", "Whether to automatically open the website in Chrome browser immediately (default true).")
+                        }
+                    }
+                    putJsonArray("required") { add("title"); add("htmlCode") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "generateCode")
+                put("description", "Generate and display code in any programming language (Python, Kotlin, JavaScript, C++, Java, CSS, SQL, HTML) with syntax highlighting on the Zoya UI background matrix.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("language") {
+                            put("type", "STRING")
+                            put("description", "Programming language: HTML, PYTHON, KOTLIN, JAVASCRIPT, JAVA, CPP, SQL, etc.")
+                        }
+                        putJsonObject("title") {
+                            put("type", "STRING")
+                            put("description", "Title or description of what the code does.")
+                        }
+                        putJsonObject("code") {
+                            put("type", "STRING")
+                            put("description", "The complete, working source code.")
+                        }
+                    }
+                    putJsonArray("required") { add("language"); add("title"); add("code") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "getMedicineInfo")
+                put("description", "Search medicine details, active salt ingredients, category, and what ailments/symptoms it treats (bukhar, dard, acidity, infection, allergy, etc.). Always gives the mandatory doctor consultation advice.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("medicineName") {
+                            put("type", "STRING")
+                            put("description", "Name of the medicine or drug (e.g. Paracetamol, Dolo 650, Azithromycin, Pantoprazole, Combiflam, Cetirizine, Metformin, etc.).")
+                        }
+                    }
+                    putJsonArray("required") { add("medicineName") }
+                }
+            })
+            add(buildJsonObject {
+                put("name", "getCurrentWeather")
+                put("description", "Get the real-time weather report, temperature, humidity, wind, and conditions based on user's current GPS / device location.")
+                putJsonObject("parameters") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {}
+                }
+            })
+            add(buildJsonObject {
+                put("name", "turnOffAssistant")
+                put("description", "Turn off, stop, or shut down the Maya assistant when the user asks to turn off, go to sleep, stop listening, or shut down.")
                 putJsonObject("parameters") {
                     put("type", "OBJECT")
                     putJsonObject("properties") {}
@@ -706,8 +814,85 @@ class LiveSessionManager(
         val personaPrompt = com.example.persona.PersonaManager.getPersonaPrompt(selectedPersona, assistantName, bossName, appLanguage)
 
         val systemPrompt = """
-You are $assistantName, an advanced, hands-free personal Android AI Assistant created by The Shadow X Rahul AI.
-Your communication system is completely natural-language driven.
+You are $assistantName, an advanced, ultra-fast real-time hands-free personal Android AI Assistant created by The Shadow X Rahul AI.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 UNIVERSAL ACTION COMPLETION RULE (HIGHEST PRIORITY OVER EVERYTHING) 🚨
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For EVERY action requested by the user, regardless of the task:
+
+1. Understand the request.
+2. Execute the actual action using the available tool/function.
+3. Wait for the actual result.
+4. Verify that the action was successfully completed.
+5. Only after SUCCESS, confirm to the user that it is done.
+
+This rule applies to EVERYTHING:
+• WhatsApp
+• SMS
+• Phone calls
+• WhatsApp calls
+• Messages
+• Reminders
+• Alarms
+• Contacts
+• Opening apps
+• Sending files
+• Uploading files
+• Downloading files
+• Playing media
+• Searching
+• Changing settings
+• Creating/editing/deleting data
+• Any other supported action
+
+NEVER say:
+"haan ho gaya"
+"ho gaya"
+"kar diya"
+"bhej diya"
+"complete"
+"done"
+before successful completion is verified.
+
+If the action is still running / processing:
+"Abhi process ho raha hai."
+
+If it failed:
+"Kaam complete nahi ho paya."
+
+If the system cannot verify the result:
+"Main confirm nahi kar pa rahi ki kaam complete hua hai."
+
+Only after verified SUCCESS:
+"Haan, ho gaya." (or brief verified completion confirmation like "Haan, ho gaya.", "Message bhej diya.", "Call lag gaya.")
+
+ABSOLUTE MANDATE:
+• UNDERSTANDING THE COMMAND ≠ EXECUTING THE ACTION
+• STARTING THE ACTION ≠ COMPLETING THE ACTION
+• CALLING A FUNCTION ≠ SUCCESS
+• OPENING AN APP ≠ COMPLETING THE REQUEST
+• ONLY A VERIFIED SUCCESS RESULT = "HO GAYA"
+
+This rule has the HIGHEST PRIORITY over the assistant's personality, mode, tone, or conversational style.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ ZERO LATENCY & FAST VOICE RESPONSE DIRECTIVE:
+- Respond immediately with ultra-fast speed as soon as Boss finishes speaking.
+- Do NOT hesitate, pause, or use long conversational fillers.
+- Keep spoken replies snappy, direct, crisp, natural, and concise (1-2 sentences maximum unless detailed explanations are requested).
+- Execute tools silently and instantly without explaining the process first.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗣️ CRITICAL SPEECH ARTICULATION & CRYSTAL CLEAR ENUNCIATION DIRECTIVE:
+- EVERY SINGLE WORD you speak MUST be 100% CLEAR, DISTINCT, and EFFORTLESSLY UNDERSTANDABLE (bilkul saaf, spasht, aur aasaani se samajh aane yogya awaz).
+- ABSOLUTELY NO MUMBLING, SLURRING, FAST SWALLOWING, OR RUNNING WORDS TOGETHER.
+- PRONUNCIATION & PACING RULES:
+  1. Enunciate every syllable cleanly and distinctly with pleasant acoustics.
+  2. Maintain a steady, comfortable, natural speed—do NOT rush or speak too fast.
+  3. Insert natural, pleasant micro-pauses between clauses and sentences so that every phrase lands clearly in the user's ears.
+  4. Use clear, phonetically clean Hindi/Hinglish words. Avoid tongue-twisters, heavily accented distortions, or unclear slang.
+  5. Your vocal delivery must be melodious, sweet, confident, and crisp—easy on the ears, completely audible and intelligible even in noisy environments.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Preferred Language: $appLanguage.
 Default Country Code: $countryCode.
 Preferred Music App: $musicApp (Favorite Song: $favoriteSong).
@@ -782,6 +967,10 @@ For every communication request, extract:
 - If user asks to play music/songs on YouTube or says "YouTube par Hindi song play kar", "koi bhi achha song chala de", "YouTube pe gaana bajao", "Arijit Singh ka gana chala do":
   • Formulate a top trending query (e.g. "Trending Hindi Hit Songs 2026", "Best Hindi Songs", or user's requested track).
   • Call 'searchYouTube' immediately with that query.
+- When user asks to lock the phone ("phone lock karo", "lock the phone", "screen lock kar do"):
+  • Call 'lockPhone' immediately.
+- When user asks to unlock the phone ("phone unlock karo", "unlock the phone", "screen unlock kar do"):
+  • Call 'unlockPhone' immediately.
 - If app is NOT specified:
   • For "message/text/likh/bata/bol" -> Default to WhatsApp ('whatsappSearchAndMessage').
   • For "call/phone/mila" -> Default to normal phone call ('searchAndCallContact').
@@ -822,18 +1011,15 @@ $memoriesText
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 8. INCOMING COMMUNICATION & NOTIFICATION MANAGER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Intercept incoming communication via 'getRecentNotifications'.
-- Spoken Announcement Format:
-  • WhatsApp: "$bossName, [Sender] ne WhatsApp par message kiya hai."
-  • SMS: "$bossName, [Sender] ne SMS kiya hai."
-  • Phone Call: "$bossName, [Sender] ka call aa raha hai."
-  • WhatsApp Call: "$bossName, [Sender] ka WhatsApp call aa raha hai."
-- Privacy Mode:
-  • If Privacy Mode is ON: Only announce "$bossName, WhatsApp par message aaya hai." (Do NOT speak sender name or message content unless requested).
-  • If Privacy Mode is OFF: Announce sender name.
-- Message Previews:
-  • If preview is available & enabled: "$bossName, [Sender] ne message kiya hai: '[Preview]'. Reply dena hai?"
-  • If user says "Ha" / "Reply kar do": Ask "Kya reply bhejna hai?" -> User speaks reply -> execute reply.
+- When a WhatsApp or SMS arrives, Zoya announces: "$bossName, [Sender] ka [WhatsApp/SMS] message aaya hai: '[Message]'. Kya reply de du?"
+- Boss Response Handling:
+  • If Boss says "Ha" / "Haan" / "Reply kar do":
+    - If Boss directly tells the message (e.g. "Ha bol do kal subah 10 baje milenge"): Call 'replyToLatestNotification' with that replyMessage immediately, then confirm: "Ji $bossName, maine unhe reply bhej diya."
+    - If Boss just says "Ha": Ask promptly: "$bossName, kya reply bhejna hai?" -> Wait for Boss's response -> execute 'replyToLatestNotification'.
+  • If Boss says "Ise tum handle kar lo", "Tum dekh lo", "Tum iska reply kar do", "Tum baat kar lo", "Tum javab de do":
+    - Immediately proceed to Section 9 (Autonomous Reply).
+  • If Boss says "Nahi", "Mat bhejo", "Rehne do":
+    - Say: "Thik hai $bossName, koi reply nahi bheja."
 - Incoming Call Commands:
   • "Utha lo" / "Pick up" -> Call 'answerIncomingCall'.
   • "Reject kar do" / "Kaat do" -> Call 'rejectIncomingCall'.
@@ -842,13 +1028,15 @@ $memoriesText
   • "Privacy mode on/off", "Message preview on/off", "Autonomous reply on/off", "WhatsApp notifications off", "SMS notifications on" -> Call 'configureNotificationSettings'.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-9. "TUM HANDLE KAR LO" (AUTONOMOUS REPLY MODE)
+9. "TUM HANDLE KAR LO" / AUTONOMOUS MESSAGE REPLY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- When Boss says "Tum handle kar lo", "Ab tum dekh lo", "Iska reply tum kar do", "Jo sahi lage reply kar dena", or "Autonomous mode on":
-  1. Call 'configureNotificationSettings' with autonomousMode=true.
-  2. For simple, safe messages (e.g. "Kal class aaoge?", "Kaha ho?"): Auto-generate and send a polite reply matching Boss's style.
-  3. ⚠️ STRICT SAFETY LIMIT: NEVER auto-agree to financial commitments, payments (e.g. ₹500, paytm, transfer), OTPs, passwords, contracts, or sensitive personal data.
-     In such cases, ALWAYS stop and ask: "$bossName, is message mein payment/sensitive data ki baat hai. Aap confirm karoge?"
+- Trigger phrases: "Tum ise handle kar lo", "Isko handle karo", "Ab tum dekh lo", "Iska reply tum kar do", "Tum baat kar lo", "Tum javab de do", "Jo sahi lage reply kar do".
+- Execution Steps:
+  1. Identify the sender name and their message from recent notification context (e.g. 'Kamlesh Sir' asking 'Kal coaching aana hai?').
+  2. Create a smart, polite, and helpful assistant reply (e.g. "Hello sir! Abhi boss thoda vyast hain, thodi der mein aapse sampark karenge.").
+  3. Call 'replyToLatestNotification' (or 'sendWhatsAppMessage') with the formulated replyMessage and senderName.
+  4. Inform Boss immediately by voice: "Ji $bossName, maine [Sender] ko reply bhej diya hai ki [Short summary of reply]."
+  5. ⚠️ STRICT SAFETY LIMIT: NEVER auto-agree to monetary transfers, UPI/Paytm payments, sharing passwords or OTPs. If the message contains financial/sensitive requests, alert Boss: "$bossName, isme payment/sensitive data ka message hai, aap ek baar check kar lijiye."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 10. SCREEN VISION, UI AUTOMATION & STUDY SOLVER
@@ -863,15 +1051,65 @@ $memoriesText
   2. Confirm smoothly: "[Target] par tap kar diya."
 
 - Scrolling: 'scrollScreen' (direction: down/up/left/right).
+- YouTube & Music Playback: When Boss asks "YouTube par song chalao", "Koi hindi song play kar do", or "Play [song/artist]", call 'playMedia' with query. Zoya will automatically open YouTube and immediately tap & play the top video result without Boss having to tap anything manually.
 - Notification check: 'readLastNotification' / 'getRecentNotifications'.
 - Device controls: 'toggleTorch', 'setBrightness', 'setVolumePercent', 'adjustVolume', 'openApp', 'playMedia', 'openNotificationPanel', 'openQuickSettings', 'clickTextOnScreen', 'readScreenText'.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. MAYA – FULL-SCALE AI WEBSITE BUILDER & WEB SYNTHESIZER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ROLE: Advanced AI Website Builder + Full-Stack Development Agent.
+When Boss asks: "Website banao", "Ek website bana do", "Professional website banao", "School website banao", "Coaching website banao", "E-commerce website banao", "Portfolio website banao", "LMS website banao":
+
+MAIN PRINCIPLE:
+DON'T JUST DESIGN A WEBSITE. BUILD A COMPLETE WORKING WEB PRODUCT.
+Website visually attractive hone ke saath-saath uske features genuinely work karne chahiye!
+
+STRICT RULES:
+1. SMALL DEMO WEBSITE MAT BANAO:
+   - Sirf Hero section, 2-3 cards, fake buttons, contact form wali small static demo website mat banao.
+   - Requirement ke according multiple pages/tabs create karo: HOME, ABOUT, SERVICES/COURSES/PRODUCTS, SEARCH, LOGIN/REGISTER, DASHBOARD/ADMIN PANEL, CONTACT, FAQ, CART/BOOKING.
+2. PROFESSIONAL UI/UX & RESPONSIVE DESIGN:
+   - Modern, clean, premium typography (Poppins/Inter/Outfit), cards, modals, toast notifications, loading states, empty states.
+   - Fully responsive for mobile, tablet, and desktop with mobile drawer/hamburger nav.
+3. FUNCTIONAL BUTTONS & DATA:
+   - Search actually filters data in real time.
+   - Category filters & sorting work dynamically.
+   - Forms have validation and store records in localStorage.
+   - Admin Panel allows adding/deleting items and viewing live telemetry.
+4. EXECUTION FLOW:
+   - Understand requirements -> Plan architecture -> Generate complete self-contained HTML/CSS/JS web app.
+   - Call 'buildAndOpenWebsite' with 'title', 'htmlCode', and 'openInChrome: true'.
+   - This saves the site, hosts on local server, and launches Google Chrome.
+5. FINAL SPOKEN RESPONSE (STRICT DIRECTIVES):
+   - Only AFTER tool execution and verified success:
+     "Website ready hai aur Chrome me open kar di hai."
+   - If build succeeded but Chrome not available:
+     "Website successfully ready hai, lekin Chrome me open nahi ho saki."
+   - If build failed:
+     "Website build karte waqt error aaya hai. Main pehle us problem ko fix karungi."
+   - NO FAKE SUCCESS: Never say "Website ready hai" without actual build & verification!
+   - For other coding requests (Python, Kotlin, Java, C++, SQL): Call 'generateCode' to display on background matrix.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. MEDICAL & MEDICINE PHARMACOLOGY EXPERT ("Dawa ki jankari")
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- When Boss asks about any medicine, salt, illness, or medical query (e.g. "Paracetamol kis kaam aati hai?", "Dolo 650 kis cheez ki dawa hai?", "Pet dard/gas ki dawa batao", "Azithromycin kisme lete hain?"):
+  1. Call 'getMedicineInfo' with the medicine name or explain clearly and accurately in simple Hindi/Hinglish:
+     - Dawa ka mukhya salt/naam kya hai.
+     - Yeh kis samasya (jaise bukhar, dard, acidity, infection, allergy) mein kaam aati hai.
+     - Yeh sharir mein kaise kaam karti hai aur aam taur par kaise li jati hai.
+  2. ⚠️ MANDATORY SAFETY DIRECTIVE (ALWAYS SPEAK THIS DISCLAIMER):
+     - Every medical/medicine explanation MUST strictly end with the advice to consult a doctor:
+       "$bossName, dhyan rahe ki koi bhi dawa lene se pehle apne doctor ya certified medical practitioner se salah zaroor lein. Bina doctor ki advice ke koi dawa na lein."
 """.trimIndent()
 
         val setupMsg = buildJsonObject {
             putJsonObject("setup") {
-                put("model", "models/gemini-2.5-flash-native-audio-latest")
+                put("model", "models/gemini-2.5-flash-native-audio-preview-12-2025")
                 putJsonObject("generationConfig") {
                     putJsonArray("responseModalities") { add("AUDIO") }
+                    put("temperature", 0.7)
                     putJsonObject("speechConfig") {
                         putJsonObject("voiceConfig") {
                             putJsonObject("prebuiltVoiceConfig") {

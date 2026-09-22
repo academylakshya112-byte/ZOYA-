@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,7 +41,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToPermissions: () -> Unit,
     onNavigateToAdvanced: () -> Unit = {},
-    onNavigateToPersona: () -> Unit = {}
+    onNavigateToPersona: () -> Unit = {},
+    onNavigateToLock: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE) }
@@ -50,8 +52,13 @@ fun SettingsScreen(
         mutableStateOf(PersonaManager.getSelectedPersona(context))
     }
 
+    // Animation Theme State (6 Futuristic Animations)
+    var selectedAnimation by remember {
+        mutableStateOf(MayaAnimationManager.getSelectedAnimation(context))
+    }
+
     // Core Profile states
-    var yourName by remember { mutableStateOf(prefs.getString("boss_name", "RDX sir") ?: "RDX sir") }
+    var yourName by remember { mutableStateOf(prefs.getString("boss_name", "shadow x rahul") ?: "shadow x rahul") }
     var assistantName by remember { mutableStateOf(prefs.getString("assistant_name", "MAYA") ?: "MAYA") }
 
     // Music states
@@ -96,10 +103,12 @@ fun SettingsScreen(
     var floatingOrb by remember { mutableStateOf(prefs.getBoolean("floating_orb", false)) }
     var startOnBoot by remember { mutableStateOf(prefs.getBoolean("start_on_boot", true)) }
 
-    // Call announcements
+    // Call & Message announcements
     var callAnnouncementEnabled by remember { mutableStateOf(CallAnnouncer.isCallAnnouncementEnabled(context)) }
     var phoneCallEnabled by remember { mutableStateOf(CallAnnouncer.isPhoneCallAnnouncementEnabled(context)) }
     var whatsappCallEnabled by remember { mutableStateOf(CallAnnouncer.isWhatsAppCallAnnouncementEnabled(context)) }
+    var whatsappMsgEnabled by remember { mutableStateOf(CallAnnouncer.isWhatsAppMessageAnnouncementEnabled(context)) }
+    var smsMsgEnabled by remember { mutableStateOf(CallAnnouncer.isSmsMessageAnnouncementEnabled(context)) }
     var repeatAnnouncement by remember { mutableStateOf(CallAnnouncer.isRepeatEnabled(context)) }
 
     val pinkAccent = Color(0xFFFF5277)
@@ -155,6 +164,159 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // ─────────────────────────────────────────────
+            // MASTER ASSISTANT POWER ON/OFF SWITCH
+            // ─────────────────────────────────────────────
+            var isAssistantActive by remember {
+                mutableStateOf(com.example.ZoyaForegroundService.activeService != null)
+            }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    isAssistantActive = (com.example.ZoyaForegroundService.activeService != null)
+                    kotlinx.coroutines.delay(500)
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isAssistantActive) Color(0xFF16251C) else cardBg
+                ),
+                border = BorderStroke(
+                    1.5.dp,
+                    if (isAssistantActive) Color(0xFF4CAF50) else Color(0xFFE57373).copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(
+                                    if (isAssistantActive) Color(0xFF2E7D32).copy(alpha = 0.3f) else Color(0xFFC62828).copy(alpha = 0.2f),
+                                    RoundedCornerShape(12.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(if (isAssistantActive) "⚡" else "💤", fontSize = 20.sp)
+                        }
+                        Column {
+                            Text(
+                                text = "Maya Assistant Service",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isAssistantActive) "Active & Listening (ON)" else "Stopped / Idle (OFF)",
+                                color = if (isAssistantActive) Color(0xFF81C784) else Color(0xFFE57373),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = isAssistantActive,
+                        onCheckedChange = { enable ->
+                            if (enable) {
+                                com.example.ZoyaForegroundService.start(context)
+                                isAssistantActive = true
+                                Toast.makeText(context, "Maya Assistant Turned ON", Toast.LENGTH_SHORT).show()
+                            } else {
+                                com.example.ZoyaForegroundService.stop(context)
+                                isAssistantActive = false
+                                Toast.makeText(context, "Maya Assistant Turned OFF", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF4CAF50),
+                            uncheckedThumbColor = Color(0xFFB0A5C4),
+                            uncheckedTrackColor = Color(0xFF2E1C44)
+                        )
+                    )
+                }
+            }
+
+            // ─────────────────────────────────────────────
+            // 🔒 MAYA LOCK & SECURITY SYSTEM
+            // ─────────────────────────────────────────────
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToLock() },
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(
+                                    Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                    RoundedCornerShape(12.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🔐", fontSize = 20.sp)
+                        }
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Maya Lock System",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFFF4081), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("NEW", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                            Text(
+                                text = "PIN, Pattern, One-time Auth & Test Lock ↗",
+                                color = Color(0xFF80D8FF),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
+                    }
+
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open Lock Settings",
+                        tint = Color(0xFF80D8FF)
+                    )
+                }
+            }
+
             // ─────────────────────────────────────────────
             // 0. PERSONA SETTINGS (3 SELECTABLE MODES) 🎭
             // ─────────────────────────────────────────────
@@ -263,6 +425,121 @@ fun SettingsScreen(
                                     },
                                     colors = RadioButtonDefaults.colors(
                                         selectedColor = personaColor,
+                                        unselectedColor = Color(0xFF5E427B)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ─────────────────────────────────────────────
+            // 0.1 MAYA HOME HOLOGRAM ANIMATIONS (6 THEMES) 🎯
+            // ─────────────────────────────────────────────
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Hologram Animation", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("🎯", fontSize = 15.sp)
+                        }
+
+                        Text(
+                            text = "6 Themes",
+                            color = Color(0xFF00E5FF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Choose your home screen 3D hologram avatar style (Cyber HUD is Default).",
+                        color = Color(0xFFB0A5C4),
+                        fontSize = 12.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 6 Selectable Animation Theme Cards
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MayaAnimationType.entries.forEach { anim ->
+                            val isSelected = selectedAnimation == anim
+                            val animColor = Color(anim.accentColor)
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isSelected) animColor.copy(alpha = 0.15f) else inputBg,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) animColor else borderColor,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .clickable {
+                                        selectedAnimation = anim
+                                        MayaAnimationManager.setSelectedAnimation(context, anim)
+                                        Toast.makeText(context, "${anim.displayName} Activated", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(anim.iconEmoji, fontSize = 22.sp)
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = anim.displayName,
+                                                color = if (isSelected) Color.White else Color(0xFFE1D5F5),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                            if (anim == MayaAnimationType.CYBER_HUD) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("• DEFAULT", color = Color(0xFF00E5FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            } else if (isSelected) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("• ACTIVE", color = animColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Text(
+                                            text = anim.subtitle,
+                                            color = Color(0xFFB0A5C4),
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp,
+                                            maxLines = 2
+                                        )
+                                    }
+                                }
+
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        selectedAnimation = anim
+                                        MayaAnimationManager.setSelectedAnimation(context, anim)
+                                        Toast.makeText(context, "${anim.displayName} Activated", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = animColor,
                                         unselectedColor = Color(0xFF5E427B)
                                     )
                                 )
@@ -806,7 +1083,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Phone Calls", color = Color.White, fontSize = 13.sp)
+                            Text("Phone Calls Announcement", color = Color.White, fontSize = 13.sp)
                             Switch(
                                 checked = phoneCallEnabled,
                                 onCheckedChange = {
@@ -822,12 +1099,44 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("WhatsApp Calls", color = Color.White, fontSize = 13.sp)
+                            Text("WhatsApp Calls Announcement", color = Color.White, fontSize = 13.sp)
                             Switch(
                                 checked = whatsappCallEnabled,
                                 onCheckedChange = {
                                     whatsappCallEnabled = it
                                     CallAnnouncer.setWhatsAppCallAnnouncementEnabled(context, it)
+                                },
+                                colors = switchColors
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("WhatsApp Messages Announcement", color = Color.White, fontSize = 13.sp)
+                            Switch(
+                                checked = whatsappMsgEnabled,
+                                onCheckedChange = {
+                                    whatsappMsgEnabled = it
+                                    CallAnnouncer.setWhatsAppMessageAnnouncementEnabled(context, it)
+                                },
+                                colors = switchColors
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("SMS Messages Announcement", color = Color.White, fontSize = 13.sp)
+                            Switch(
+                                checked = smsMsgEnabled,
+                                onCheckedChange = {
+                                    smsMsgEnabled = it
+                                    CallAnnouncer.setSmsMessageAnnouncementEnabled(context, it)
                                 },
                                 colors = switchColors
                             )
@@ -850,7 +1159,7 @@ fun SettingsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
                                 onClick = { CallAnnouncer.testAnnouncement(context, isWhatsApp = false) },
                                 modifier = Modifier.weight(1f),
@@ -858,16 +1167,25 @@ fun SettingsScreen(
                                 border = BorderStroke(1.dp, pinkAccent),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = pinkAccent)
                             ) {
-                                Text("Test Call", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Test Call", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                             OutlinedButton(
-                                onClick = { CallAnnouncer.testAnnouncement(context, isWhatsApp = true) },
+                                onClick = { CallAnnouncer.testMessageAnnouncement(context, isWhatsApp = true) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, Color(0xFF25D366)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF25D366))
                             ) {
-                                Text("Test WhatsApp", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("Test WA Msg", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { CallAnnouncer.testMessageAnnouncement(context, isWhatsApp = false) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFF2196F3)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2196F3))
+                            ) {
+                                Text("Test SMS", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

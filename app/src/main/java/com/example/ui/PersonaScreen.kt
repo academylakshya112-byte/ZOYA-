@@ -286,7 +286,7 @@ fun PersonaScreen(
                             OutlinedButton(
                                 onClick = {
                                     val sampleText = when (persona) {
-                                        PersonaType.CARING_SWEET -> "Haan $bossName sona, batao kya help kar sakti hoon aapki?"
+                                        PersonaType.CARING_SWEET -> "Arey babu! Itni der baad yaad aayi meri? Acha chalo pehle pyar se bolo, phir aapki help karungi! Haan jaan, batao kya karun aapke liye? 💕"
                                         PersonaType.PLAYFUL_NAKHRE -> "Achhaaa babu, ab yaad aayi meri? Batao kya order hai!"
                                         PersonaType.SUPER_FRIENDLY -> "Arre wah $bossName! Chalo batao kya kaam hai, abhi karte hain!"
                                     }

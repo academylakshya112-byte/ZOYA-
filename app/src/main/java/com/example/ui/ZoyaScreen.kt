@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -35,6 +36,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,6 +54,8 @@ import androidx.navigation.compose.rememberNavController
 import com.example.R
 import com.example.ZoyaForegroundService
 import com.example.live.ZoyaState
+import com.example.model.CodeStudioManager
+import com.example.model.GeneratedCodeSnippet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +75,16 @@ fun ZoyaScreen() {
                 }
             )
         }
+        composable("maya_home") {
+            MayaHomeScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        composable("maya_lock") {
+            MayaLockScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
         composable("permissions") {
             PermissionsScreen(
                 onNavigateBack = { navController.popBackStack() }
@@ -75,7 +95,8 @@ fun ZoyaScreen() {
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToPermissions = { navController.navigate("permissions") },
                 onNavigateToAdvanced = { navController.navigate("advanced") },
-                onNavigateToPersona = { navController.navigate("persona") }
+                onNavigateToPersona = { navController.navigate("persona") },
+                onNavigateToLock = { navController.navigate("maya_lock") }
             )
         }
         composable("persona") {
@@ -130,8 +151,8 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
 
     val prefs = remember { context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE) }
     var apiKey by remember { mutableStateOf(prefs.getString("api_key", "") ?: "") }
-    var bossName by remember { mutableStateOf(prefs.getString("boss_name", "Hunter") ?: "Hunter") }
-    var showSettingsDialog by remember { mutableStateOf(apiKey.isEmpty()) }
+    var bossName by remember { mutableStateOf(prefs.getString("boss_name", "shadow x rahul") ?: "shadow x rahul") }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var zoyaState by remember { mutableStateOf(ZoyaForegroundService.currentState) }
     var serviceStarted by remember { mutableStateOf(ZoyaForegroundService.activeService != null) }
 
@@ -139,21 +160,32 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions[android.Manifest.permission.RECORD_AUDIO] == true) {
-            val intent = Intent(context, ZoyaForegroundService::class.java)
-            ContextCompat.startForegroundService(context, intent)
+            ZoyaForegroundService.start(context)
             serviceStarted = true
+            android.widget.Toast.makeText(context, "Maya Assistant Activated", android.widget.Toast.LENGTH_SHORT).show()
         } else {
-            android.widget.Toast.makeText(context, "Microphone and necessary permissions required!", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "Microphone permission required to turn on assistant!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        // Refresh weather as soon as location permission is granted
+        if (permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true || permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                com.example.model.LocationWeatherManager.refreshWeather(context, force = true)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            serviceStarted = (ZoyaForegroundService.activeService != null)
+            zoyaState = ZoyaForegroundService.currentState
+            delay(500)
         }
     }
 
     val liveSessionManager = ZoyaForegroundService.activeService?.liveSessionManager
     val messages = liveSessionManager?.messages?.collectAsState(initial = emptyList())?.value ?: emptyList()
-
-    var temperature by remember { mutableStateOf("28°") }
-    var weatherStatus by remember { mutableStateOf("Cloudy") }
-    var humidity by remember { mutableStateOf("86%") }
-    var weatherIcon by remember { mutableStateOf("☁️") }
+    val activeCode by CodeStudioManager.activeCode.collectAsState()
+    val weatherInfo by com.example.model.LocationWeatherManager.weatherState.collectAsState()
 
     val currentDateVal = remember {
         SimpleDateFormat("d", Locale.getDefault()).format(Date())
@@ -179,51 +211,9 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
         }
     }
 
+    // Refresh Live Current Location Weather
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                val url = java.net.URL("https://api.open-meteo.com/v1/forecast?latitude=28.6139&longitude=77.2090&current=temperature_2m,relative_humidity_2m,weather_code")
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                if (connection.responseCode == 200) {
-                    val response = connection.inputStream.bufferedReader().use { it.readText() }
-                    val tempIndex = response.indexOf("\"temperature_2m\":")
-                    if (tempIndex != -1) {
-                        val tempSub = response.substring(tempIndex + 17)
-                        val tempVal = tempSub.takeWhile { it != ',' && it != '}' }.trim()
-                        temperature = "${tempVal.toDouble().toInt()}°"
-                    }
-                    val humidityIndex = response.indexOf("\"relative_humidity_2m\":")
-                    if (humidityIndex != -1) {
-                        val humSub = response.substring(humidityIndex + 23)
-                        val humVal = humSub.takeWhile { it != ',' && it != '}' }.trim()
-                        humidity = "$humVal%"
-                    }
-                    val codeIndex = response.indexOf("\"weather_code\":")
-                    if (codeIndex != -1) {
-                        val codeSub = response.substring(codeIndex + 15)
-                        val codeVal = codeSub.takeWhile { it != ',' && it != '}' }.trim().toIntOrNull() ?: 0
-                        val (status, icon) = when (codeVal) {
-                            0 -> "Clear" to "☀️"
-                            1, 2, 3 -> "Partly Cloudy" to "⛅"
-                            45, 48 -> "Foggy" to "🌫️"
-                            51, 53, 55 -> "Drizzle" to "🌧️"
-                            61, 63, 65 -> "Rainy" to "🌧️"
-                            71, 73, 75 -> "Snowy" to "❄️"
-                            80, 81, 82 -> "Showers" to "🌦️"
-                            95, 96, 99 -> "Thunderstorm" to "⛈️"
-                            else -> "Cloudy" to "☁️"
-                        }
-                        weatherStatus = status
-                        weatherIcon = icon
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
+        com.example.model.LocationWeatherManager.refreshWeather(context)
     }
 
     // Determine Greeting time
@@ -248,7 +238,7 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                     onNavigate = { dest ->
                         coroutineScope.launch {
                             drawerState.close()
-                            if (dest.route != "home" && dest.route != "maya_home") {
+                            if (dest.route != "home") {
                                 onNavigateToDestination(dest.route)
                             }
                         }
@@ -272,6 +262,9 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                     )
                 )
         ) {
+            // 🌟 Full-Screen Live Code Background Wallpaper (Renders website code directly on the home screen behind character and cards)
+            FullScreenLiveCodeWallpaper(snippet = activeCode)
+
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -293,14 +286,68 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                         )
                     }
 
-                    // Assistant Name Centered: "Maya"
-                    Text(
-                        text = "Maya",
-                        color = Color(0xFF1E295D),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        letterSpacing = 0.5.sp
-                    )
+                    // Assistant Name & Power Toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Maya",
+                            color = Color(0xFF1E295D),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            letterSpacing = 0.5.sp
+                        )
+
+                        // Master ON / OFF Toggle Pill
+                        val isRunning = serviceStarted || ZoyaForegroundService.activeService != null
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    if (isRunning) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isRunning) Color(0xFF4CAF50).copy(alpha = 0.6f) else Color(0xFFE57373).copy(alpha = 0.6f),
+                                    RoundedCornerShape(20.dp)
+                                )
+                                .clickable {
+                                    if (isRunning) {
+                                        ZoyaForegroundService.stop(context)
+                                        serviceStarted = false
+                                        zoyaState = ZoyaState.IDLE
+                                        android.widget.Toast.makeText(context, "Maya Assistant turned OFF", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        permissionLauncher.launch(
+                                            arrayOf(
+                                                android.Manifest.permission.RECORD_AUDIO,
+                                                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                                                android.Manifest.permission.READ_CONTACTS,
+                                                android.Manifest.permission.CALL_PHONE
+                                            )
+                                        )
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isRunning) Color(0xFF2E7D32) else Color(0xFFC62828))
+                            )
+                            Text(
+                                text = if (isRunning) "ON" else "OFF",
+                                color = if (isRunning) Color(0xFF2E7D32) else Color(0xFFC62828),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // Notification / Permissions shortcut indicator
@@ -380,19 +427,32 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             horizontalAlignment = Alignment.End
                         ) {
-                            // Weather Card Top
+                            // Weather Card Top (Live Current Location)
                             Row(
                                 modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
                                     .border(0.5.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    .clickable {
+                                        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                            val w = com.example.model.LocationWeatherManager.refreshWeather(context, force = true)
+                                            withContext(Dispatchers.Main) {
+                                                android.widget.Toast.makeText(context, "📍 ${w.cityName}: ${w.temperature} (${w.condition})", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(weatherIcon, fontSize = 16.sp)
+                                Text(weatherInfo.icon, fontSize = 16.sp)
                                 Column {
-                                    Text(temperature, color = Color(0xFF1E295D), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    Text(weatherStatus, color = Color(0xFF1E295D).copy(alpha = 0.6f), fontSize = 9.sp)
+                                    Text(weatherInfo.temperature, color = Color(0xFF1E295D), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (weatherInfo.cityName.length > 9) weatherInfo.cityName.take(9) + ".." else weatherInfo.cityName,
+                                        color = Color(0xFF1E295D).copy(alpha = 0.7f),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
 
@@ -415,20 +475,117 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                     }
                 }
 
-                // Centerpiece Witch Character
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(320.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CharacterContainer(state = zoyaState)
+                // Sleek Floating Action Bar when code or a website is generated
+                if (activeCode != null) {
+                    item {
+                        val snippet = activeCode!!
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFF0F172A).copy(alpha = 0.85f))
+                                .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(if (snippet.isWebsite) "🌐" else "⚡", fontSize = 16.sp)
+                                Column {
+                                    Text(
+                                        text = snippet.title,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = if (snippet.isWebsite) "Website ready • ${snippet.language}" else "Live Code • ${snippet.language}",
+                                        color = Color(0xFF00E5FF),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (snippet.filePath != null) {
+                                    Button(
+                                        onClick = {
+                                            val file = java.io.File(snippet.filePath)
+                                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                file
+                                            )
+                                            val chromeIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, "text/html")
+                                                setPackage("com.android.chrome")
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            try {
+                                                context.startActivity(chromeIntent)
+                                            } catch (e: Exception) {
+                                                val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(uri, "text/html")
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(fallbackIntent)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Text("Open Chrome", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText(snippet.title, snippet.code)
+                                        clipboard.setPrimaryClip(clip)
+                                        android.widget.Toast.makeText(context, "Code copied!", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF58A6FF), modifier = Modifier.size(16.dp))
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        CodeStudioManager.clearActiveCode()
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close Code View", tint = Color.LightGray, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
                     }
                 }
 
-                // Quick Action Buttons Row (Music, Study, Journal) exactly like reference image
+                // Centerpiece Cyber Hologram Character
+                item {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(310.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CharacterContainer(
+                            state = zoyaState,
+                            onAnimationClick = null
+                        )
+                    }
+                }
+
+                // Quick Action Buttons Row 1 (Music, Study, Journal)
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(
@@ -456,6 +613,34 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                     }
                 }
 
+                // Quick Action Buttons Row 2 (Make Website, Coding, Dawa Info)
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        QuickActionButton(
+                            icon = "🌐",
+                            label = "Make Web",
+                            modifier = Modifier.weight(1f),
+                            onClick = { ZoyaForegroundService.activeService?.sendTextMessage("Ek shandar animated website banao aur Chrome me open karo") }
+                        )
+                        QuickActionButton(
+                            icon = "💻",
+                            label = "Coding",
+                            modifier = Modifier.weight(1f),
+                            onClick = { ZoyaForegroundService.activeService?.sendTextMessage("Ek Python coding script likho") }
+                        )
+                        QuickActionButton(
+                            icon = "💊",
+                            label = "Dawa Info",
+                            modifier = Modifier.weight(1f),
+                            onClick = { ZoyaForegroundService.activeService?.sendTextMessage("Paracetamol aur Dolo 650 dawa kis kaam aati hai batao") }
+                        )
+                    }
+                }
+
                 // Info Glass Cards Grid (Weather, Today, Mood)
                 item {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -464,12 +649,25 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         InfoGlassCard(
-                            title = "Weather",
-                            value = temperature,
-                            subtitle = weatherStatus,
-                            meta = "💧 $humidity",
-                            icon = weatherIcon,
-                            modifier = Modifier.weight(1f)
+                            title = if (weatherInfo.cityName.isEmpty() || weatherInfo.cityName == "Detecting...") "Weather" else "📍 ${weatherInfo.cityName}",
+                            value = weatherInfo.temperature,
+                            subtitle = weatherInfo.condition,
+                            meta = "💧 ${weatherInfo.humidity} • 💨 ${weatherInfo.windSpeed}",
+                            icon = weatherInfo.icon,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                        val w = com.example.model.LocationWeatherManager.refreshWeather(context, force = true)
+                                        withContext(Dispatchers.Main) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "📍 ${w.cityName}: ${w.temperature}, ${w.condition} (💧 ${w.humidity})",
+                                                android.widget.Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                                }
                         )
                         InfoGlassCard(
                             title = "Today",
@@ -631,29 +829,43 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
             }
 
             // Visually Dominant Circular Floating Mic trigger exactly like reference image
+            val isAssistantActive = serviceStarted || ZoyaForegroundService.activeService != null
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .offset(y = (-20).dp)
                     .size(76.dp)
-                    .shadow(12.dp, CircleShape, spotColor = Color(0xFF00E5FF))
+                    .shadow(12.dp, CircleShape, spotColor = if (isAssistantActive) Color(0xFF00E5FF) else Color.Gray)
                     .clip(CircleShape)
                     .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFF00B0FF),
-                                Color(0xFF00E5FF)
+                        if (isAssistantActive) {
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF00B0FF),
+                                    Color(0xFF00E5FF)
+                                )
                             )
-                        )
+                        } else {
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF37474F),
+                                    Color(0xFF263238)
+                                )
+                            )
+                        }
                     )
                     .clickable {
-                        val service = ZoyaForegroundService.activeService
-                        if (service != null) {
-                            service.reconnectSession()
+                        if (isAssistantActive) {
+                            ZoyaForegroundService.stop(context)
+                            serviceStarted = false
+                            zoyaState = ZoyaState.IDLE
+                            android.widget.Toast.makeText(context, "Maya Assistant turned OFF", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             permissionLauncher.launch(
                                 arrayOf(
                                     android.Manifest.permission.RECORD_AUDIO,
+                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
                                     android.Manifest.permission.READ_CONTACTS,
                                     android.Manifest.permission.CALL_PHONE
                                 )
@@ -662,8 +874,17 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // Expanding active pulse ring inside
-                CircularTriggerWave(state = zoyaState)
+                if (isAssistantActive) {
+                    // Expanding active pulse ring inside
+                    CircularTriggerWave(state = zoyaState)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MicOff,
+                        contentDescription = "Assistant OFF - Tap to Turn ON",
+                        tint = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
         }
     }
@@ -784,160 +1005,39 @@ fun HomeScreen(onNavigateToDestination: (String) -> Unit) {
 }
 
 @Composable
-fun CharacterContainer(state: ZoyaState) {
-    val infiniteTransition = rememberInfiniteTransition()
+fun CharacterContainer(
+    state: ZoyaState,
+    onAnimationClick: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    var selectedAnim by remember {
+        mutableStateOf(MayaAnimationManager.getSelectedAnimation(context))
+    }
 
-    // Base breathing/pulsing scale
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-
-    // Main orb rotation
-    val orbRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(10000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
-    )
-
-    // Inner wave offset for reactive states
-    val waveOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 2f * Math.PI.toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
-    )
-
-    Box(
-        modifier = Modifier
-            .size(260.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        // Core glowing colors corresponding to each state
-        val primaryColor = when (state) {
-            ZoyaState.LISTENING -> Color(0xFFB388FF) // Purple
-            ZoyaState.THINKING -> Color(0xFFFFD180)  // Golden
-            ZoyaState.SPEAKING -> Color(0xFF00E676)  // Emerald
-            else -> Color(0xFF00E5FF)                // Electric Cyan
-        }
-
-        val secondaryColor = when (state) {
-            ZoyaState.LISTENING -> Color(0xFF7C4DFF)
-            ZoyaState.THINKING -> Color(0xFFFF9100)
-            ZoyaState.SPEAKING -> Color(0xFF00B0FF)
-            else -> Color(0xFF2979FF)
-        }
-
-        // Draw the futuristic professional vector hologram sphere
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .align(Alignment.Center)
-        ) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val baseRadius = (size.minDimension / 2.5f) * pulseScale
-
-            // 1. Outer Ambient Aura glow
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        primaryColor.copy(alpha = 0.35f),
-                        secondaryColor.copy(alpha = 0.1f),
-                        Color.Transparent
-                    ),
-                    center = center,
-                    radius = baseRadius * 1.8f
-                ),
-                radius = baseRadius * 1.8f
-            )
-
-            // 2. Layered Holographic Orbital Rings
-            val ringCount = 3
-            for (i in 0 until ringCount) {
-                val angleOffset = (i * 120) + (orbRotation * (if (i % 2 == 0) 1 else -1))
-                rotate(degrees = angleOffset, pivot = center) {
-                    drawOval(
-                        brush = Brush.linearGradient(
-                            colors = listOf(primaryColor.copy(alpha = 0.6f), Color.Transparent, secondaryColor.copy(alpha = 0.6f))
-                        ),
-                        topLeft = Offset(center.x - baseRadius * 1.25f, center.y - baseRadius * 0.25f),
-                        size = Size(baseRadius * 2.5f, baseRadius * 0.5f),
-                        style = Stroke(width = 3f)
-                    )
-
-                    // Accent particle nodes along orbits
-                    drawCircle(
-                        color = primaryColor,
-                        radius = 6f,
-                        center = Offset(center.x + baseRadius * 1.25f, center.y)
-                    )
-                }
+    DisposableEffect(Unit) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "maya_animation_theme") {
+                selectedAnim = MayaAnimationManager.getSelectedAnimation(context)
             }
-
-            // 3. Central Quantum Sphere Core
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.White,
-                        primaryColor.copy(alpha = 0.8f),
-                        secondaryColor.copy(alpha = 0.5f),
-                        Color.Transparent
-                    ),
-                    center = center,
-                    radius = baseRadius * 0.75f
-                ),
-                radius = baseRadius * 0.75f
-            )
-
-            // Inner Tech Circuit Lines inside core
-            drawCircle(
-                color = primaryColor.copy(alpha = 0.7f),
-                radius = baseRadius * 0.55f,
-                style = Stroke(width = 1.5f)
-            )
-
-            // 4. Dynamic Audio-reactive/Thinking Sine waves crossing the core horizontally
-            val wavePoints = 40
-            val path = Path()
-            val amplitude = if (state == ZoyaState.SPEAKING || state == ZoyaState.LISTENING) 25f else 10f
-            val frequency = if (state == ZoyaState.THINKING) 0.25f else 0.15f
-
-            for (p in 0..wavePoints) {
-                val fraction = p.toFloat() / wavePoints
-                val x = center.x - baseRadius * 0.6f + (baseRadius * 1.2f * fraction)
-                val angle = (fraction * 2f * Math.PI.toFloat() * frequency * 10f) + waveOffset
-                val y = center.y + (amplitude * kotlin.math.sin(angle))
-
-                if (p == 0) {
-                    path.moveTo(x, y)
-                } else {
-                    path.lineTo(x, y)
-                }
-            }
-
-            drawPath(
-                path = path,
-                color = Color.White,
-                style = Stroke(width = 3.5f)
-            )
-
-            // 5. Surrounding Cybernetic Tech Ring
-            drawCircle(
-                color = primaryColor.copy(alpha = 0.3f),
-                radius = baseRadius * 1.15f,
-                style = Stroke(width = 4f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(15f, 25f), 0f))
-            )
+        }
+        val prefs = context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
         }
     }
+
+    val assistantName = remember {
+        val prefs = context.getSharedPreferences("ZoyaPrefs", Context.MODE_PRIVATE)
+        prefs.getString("assistant_name", "M.A.Y.A") ?: "M.A.Y.A"
+    }
+
+    MayaMasterAnimation(
+        state = state,
+        animationType = selectedAnim,
+        assistantName = assistantName,
+        onAnimationClick = onAnimationClick
+    )
 }
 
 @Composable
@@ -1134,4 +1234,317 @@ fun ChatScreen(onNavigateBack: () -> Unit) {
         }
     }
 }
+
+// 🌟 Full-Screen Live Code Background Wallpaper (Renders website/HTML/CSS code with real-time typewriter stream & upward auto-scroll)
+@Composable
+fun FullScreenLiveCodeWallpaper(snippet: GeneratedCodeSnippet?) {
+    val codeText = snippet?.code ?: return
+    val snippetId = snippet.id
+    val allLines = remember(codeText) { codeText.lines() }
+    val totalLines = allLines.size
+
+    // Progressive line count for real-time typewriter stream effect
+    var visibleLinesCount by remember(snippetId, codeText) { mutableStateOf(1) }
+    var isWritingComplete by remember(snippetId, codeText) { mutableStateOf(false) }
+
+    val scrollState = rememberScrollState()
+
+    // Real-time typewriter line generation effect
+    LaunchedEffect(snippetId, codeText) {
+        visibleLinesCount = 1
+        isWritingComplete = false
+        val delayPerLine = when {
+            totalLines > 200 -> 15L
+            totalLines > 100 -> 22L
+            totalLines > 50 -> 30L
+            else -> 40L
+        }
+        for (i in 1..totalLines) {
+            visibleLinesCount = i
+            delay(delayPerLine)
+        }
+        isWritingComplete = true
+    }
+
+    // Auto-scroll upward as new lines are typed
+    LaunchedEffect(visibleLinesCount) {
+        if (!isWritingComplete && scrollState.maxValue > 0) {
+            scrollState.animateScrollTo(
+                scrollState.maxValue,
+                animationSpec = tween(durationMillis = 35, easing = LinearEasing)
+            )
+        }
+    }
+
+    // Blinking live hacker cursor
+    val infiniteTransition = rememberInfiniteTransition(label = "liveCursor")
+    val cursorAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(350, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cursorAlpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(top = 8.dp, bottom = 80.dp, start = 8.dp, end = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            // Live synthesizer status header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                if (!isWritingComplete) Color(0xFF00E5FF) else Color(0xFF69F0AE),
+                                CircleShape
+                            )
+                    )
+                    Text(
+                        text = if (!isWritingComplete) "⚡ Synthesizing Code... [$visibleLinesCount/$totalLines]" else "✨ Code Synthesized • $totalLines lines",
+                        color = if (!isWritingComplete) Color(0xFF00E5FF) else Color(0xFF69F0AE),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (!isWritingComplete) {
+                    Text(
+                        text = "LIVE STREAM ⬆",
+                        color = Color(0xFFFFD54F),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Streamed lines with upward scrolling
+            allLines.take(visibleLinesCount).forEachIndexed { index, rawLine ->
+                val isLastActiveLine = (index == visibleLinesCount - 1) && !isWritingComplete
+                val lineNumberStr = (index + 1).toString().padStart(3, ' ')
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isLastActiveLine) {
+                                Modifier.background(
+                                    Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                    RoundedCornerShape(4.dp)
+                                )
+                            } else Modifier
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Line Number
+                    Text(
+                        text = "$lineNumberStr ",
+                        color = if (isLastActiveLine) Color(0xFF00E5FF) else Color(0xFF546E7A).copy(alpha = 0.7f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    // Line Content with syntax highlighting
+                    val annotatedString = buildSyntaxHighlightedLine(rawLine)
+                    Text(
+                        text = annotatedString,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp,
+                        lineHeight = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    // Live blinking cursor at active typing point
+                    if (isLastActiveLine) {
+                        Text(
+                            text = " ▌",
+                            color = Color(0xFF00E5FF).copy(alpha = cursorAlpha),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun buildSyntaxHighlightedLine(rawLine: String): AnnotatedString {
+    return buildAnnotatedString {
+        val trimmed = rawLine.trimStart()
+        val leadingSpaces = rawLine.takeWhile { it == ' ' }
+        if (leadingSpaces.isNotEmpty()) {
+            append(leadingSpaces)
+        }
+
+        if (trimmed.startsWith("<!--") || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
+            // Comments
+            withStyle(SpanStyle(color = Color(0xFF8B949E), fontWeight = FontWeight.Normal)) {
+                append(trimmed)
+            }
+            return@buildAnnotatedString
+        }
+
+        var i = 0
+        val len = trimmed.length
+        while (i < len) {
+            val c = trimmed[i]
+            when {
+                c == '<' -> {
+                    // Tag start
+                    val tagEnd = trimmed.indexOf('>', i)
+                    if (tagEnd != -1) {
+                        val fullTag = trimmed.substring(i, tagEnd + 1)
+                        parseTagContent(this, fullTag)
+                        i = tagEnd + 1
+                    } else {
+                        withStyle(SpanStyle(color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)) {
+                            append(c)
+                        }
+                        i++
+                    }
+                }
+                c == '"' || c == '\'' -> {
+                    val quoteChar = c
+                    val nextQuote = trimmed.indexOf(quoteChar, i + 1)
+                    if (nextQuote != -1) {
+                        val strVal = trimmed.substring(i, nextQuote + 1)
+                        withStyle(SpanStyle(color = Color(0xFFFFB74D))) {
+                            append(strVal)
+                        }
+                        i = nextQuote + 1
+                    } else {
+                        withStyle(SpanStyle(color = Color(0xFFFFB74D))) {
+                            append(c)
+                        }
+                        i++
+                    }
+                }
+                c == '{' || c == '}' || c == '(' || c == ')' || c == '[' || c == ']' || c == ';' || c == ':' -> {
+                    withStyle(SpanStyle(color = Color(0xFF80D8FF), fontWeight = FontWeight.Bold)) {
+                        append(c)
+                    }
+                    i++
+                }
+                else -> {
+                    // Check for common programming keywords
+                    if (c.isLetter()) {
+                        var wordEnd = i
+                        while (wordEnd < len && (trimmed[wordEnd].isLetterOrDigit() || trimmed[wordEnd] == '_' || trimmed[wordEnd] == '-')) {
+                            wordEnd++
+                        }
+                        val word = trimmed.substring(i, wordEnd)
+                        val keywordColors = when (word) {
+                            "const", "let", "var", "function", "fun", "val", "return", "if", "else", "for", "while", "class", "import", "export", "default", "true", "false", "new", "this" -> Color(0xFFFF4081) // Pink/Magenta for keywords
+                            "document", "window", "console", "Math", "JSON", "Array", "String", "Object" -> Color(0xFF7C4DFF) // Purple
+                            "style", "script", "color", "background", "margin", "padding", "display", "font", "width", "height", "border", "flex", "grid" -> Color(0xFF69F0AE) // Mint Green for CSS
+                            else -> Color(0xFFFFFFFF).copy(alpha = 0.95f)
+                        }
+                        withStyle(SpanStyle(color = keywordColors, fontWeight = if (keywordColors != Color(0xFFFFFFFF).copy(alpha = 0.95f)) FontWeight.Bold else FontWeight.Normal)) {
+                            append(word)
+                        }
+                        i = wordEnd
+                    } else {
+                        withStyle(SpanStyle(color = Color(0xFFFFFFFF).copy(alpha = 0.95f))) {
+                            append(c)
+                        }
+                        i++
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun parseTagContent(builder: AnnotatedString.Builder, tagStr: String) {
+    var idx = 0
+    val len = tagStr.length
+    while (idx < len) {
+        val ch = tagStr[idx]
+        when {
+            ch == '<' || ch == '>' || ch == '/' || ch == '!' -> {
+                builder.withStyle(SpanStyle(color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)) {
+                    append(ch)
+                }
+                idx++
+            }
+            ch == '=' -> {
+                builder.withStyle(SpanStyle(color = Color(0xFF80D8FF))) {
+                    append(ch)
+                }
+                idx++
+            }
+            ch == '"' || ch == '\'' -> {
+                val q = ch
+                val endQ = tagStr.indexOf(q, idx + 1)
+                if (endQ != -1) {
+                    val stringVal = tagStr.substring(idx, endQ + 1)
+                    builder.withStyle(SpanStyle(color = Color(0xFFFFB74D))) { // warm peach/gold string
+                        append(stringVal)
+                    }
+                    idx = endQ + 1
+                } else {
+                    builder.withStyle(SpanStyle(color = Color(0xFFFFB74D))) {
+                        append(ch)
+                    }
+                    idx++
+                }
+            }
+            ch.isLetter() -> {
+                // Word (could be tag name like html, div, or attribute like class, lang)
+                var wordEnd = idx
+                while (wordEnd < len && (tagStr[wordEnd].isLetterOrDigit() || tagStr[wordEnd] == '-' || tagStr[wordEnd] == '_')) {
+                    wordEnd++
+                }
+                val word = tagStr.substring(idx, wordEnd)
+                
+                // Determine if it's an attribute or a tag name
+                val isTagName = idx <= 2 || tagStr.substring(0, idx).trimEnd().endsWith("<") || tagStr.substring(0, idx).trimEnd().endsWith("</") || tagStr.substring(0, idx).trimEnd().endsWith("<!")
+                if (isTagName) {
+                    builder.withStyle(SpanStyle(color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)) {
+                        append(word)
+                    }
+                } else {
+                    // Attribute name
+                    builder.withStyle(SpanStyle(color = Color(0xFF69F0AE), fontWeight = FontWeight.SemiBold)) {
+                        append(word)
+                    }
+                }
+                idx = wordEnd
+            }
+            else -> {
+                builder.withStyle(SpanStyle(color = Color(0xFFE0F7FA))) {
+                    append(ch)
+                }
+                idx++
+            }
+        }
+    }
+}
+
 

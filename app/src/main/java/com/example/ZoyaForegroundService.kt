@@ -61,12 +61,39 @@ class ZoyaForegroundService : Service() {
 
         // Provide a way to send message from UI to active service if it exists
         var activeService: ZoyaForegroundService? = null
+
+        fun start(context: Context) {
+            try {
+                val intent = Intent(context, ZoyaForegroundService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.e("ZoyaService", "Error starting service", e)
+            }
+        }
+
+        fun stop(context: Context) {
+            try {
+                activeService?.stopAssistant()
+                val intent = Intent(context, ZoyaForegroundService::class.java).apply {
+                    action = "STOP"
+                }
+                context.startService(intent)
+                context.stopService(Intent(context, ZoyaForegroundService::class.java))
+            } catch (e: Exception) {
+                Log.e("ZoyaService", "Error stopping service", e)
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
         try {
             activeService = this
+            com.example.core.AssistantCore.init(this)
             toolEngine = ToolExecutionEngine(this)
             
             val onAudioOut: (ByteArray) -> Unit = { audioData ->
@@ -75,6 +102,7 @@ class ZoyaForegroundService : Service() {
             
             val onInterruptOut: () -> Unit = {
                 try {
+                    com.example.core.VoiceOutputManager.stopSpeaking()
                     audioOutputQueue.clear()
                     if (audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
                         audioTrack?.pause()
@@ -127,13 +155,16 @@ class ZoyaForegroundService : Service() {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             while (isActive && isAudioPlaybackActive) {
                 try {
-                    val data = audioOutputQueue.poll(50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    if (data != null) {
+                    // Instant blocking take with zero sleep delay for real-time audio playback
+                    val data = audioOutputQueue.take()
+                    if (data != null && data.isNotEmpty()) {
                         if (audioTrack?.playState != AudioTrack.PLAYSTATE_PLAYING) {
                             audioTrack?.play()
                         }
-                        audioTrack?.write(data, 0, data.size)
+                        audioTrack?.write(data, 0, data.size, AudioTrack.WRITE_BLOCKING)
                     }
+                } catch (e: InterruptedException) {
+                    break
                 } catch (e: Exception) {
                     Log.e("ZoyaDiagnostic", "Playback loop error", e)
                 }
@@ -144,7 +175,8 @@ class ZoyaForegroundService : Service() {
     private fun initAudioTrack() {
         try {
             val minBuf = AudioTrack.getMinBufferSize(outputSampleRate, outChannelConfig, audioFormat)
-            val finalBuf = if (minBuf > 0) minBuf * 4 else 8192
+            // Low-latency output buffer (2x minBuf instead of 4x) for instantaneous speaker output
+            val finalBuf = if (minBuf > 0) minBuf * 2 else 4096
             
             audioTrack = AudioTrack.Builder()
                 .setAudioAttributes(
@@ -187,9 +219,9 @@ class ZoyaForegroundService : Service() {
 
         try {
             val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-            val finalBuf = if (minBuf > 0) minBuf * 4 else 8192
+            val finalBuf = if (minBuf > 0) minBuf * 2 else 4096
             
-            Log.i("ZoyaDiagnostic", "Starting microphone recording. bufSize=$finalBuf")
+            Log.i("ZoyaDiagnostic", "Starting low-latency microphone recording. bufSize=$finalBuf")
 
             val ctx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 createAttributionContext("zoya_audio")
@@ -198,7 +230,7 @@ class ZoyaForegroundService : Service() {
             }
             audioRecord = AudioRecord.Builder()
                 .setContext(ctx)
-                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 .setAudioFormat(
                     AudioFormat.Builder()
                         .setSampleRate(sampleRate)
@@ -209,8 +241,6 @@ class ZoyaForegroundService : Service() {
                 .setBufferSizeInBytes(finalBuf)
                 .build()
 
-
-
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
                 Log.e("ZoyaDiagnostic", "AudioRecord initialization failed!")
                 return
@@ -220,16 +250,15 @@ class ZoyaForegroundService : Service() {
             isRecording = true
 
             scope.launch(Dispatchers.IO) {
-                // Use a smaller fixed chunk size instead of the large buffer for reading
-                // 100ms of audio at 16kHz is 1600 samples
-                val chunkSize = 1600
+                // 40ms audio chunk (640 samples at 16kHz) for ultra-fast, real-time Gemini streaming
+                val chunkSize = 640
                 val audioBuffer = ShortArray(chunkSize)
                 var readCount = 0
                 while (isActive && isRecording) {
                     try {
-                        val readResult = audioRecord?.read(audioBuffer, 0, chunkSize) ?: 0
+                        val readResult = audioRecord?.read(audioBuffer, 0, chunkSize, AudioRecord.READ_BLOCKING) ?: 0
                         if (readResult > 0) {
-                            if (readCount % 50 == 0) {
+                            if (readCount % 100 == 0) {
                                 Log.v("ZoyaDiagnostic", "Microphone read loop active. readResult=$readResult")
                             }
                             readCount++
@@ -240,7 +269,6 @@ class ZoyaForegroundService : Service() {
                     } catch (e: Exception) {
                         Log.e("ZoyaDiagnostic", "Error reading audio", e)
                     }
-                    // No delay needed here as audioRecord?.read is blocking
                 }
                 Log.i("ZoyaDiagnostic", "Microphone loop stopped.")
             }
@@ -252,36 +280,51 @@ class ZoyaForegroundService : Service() {
     private var consecutiveLoudChunks = 0
     private var lastFlushTime = 0L
 
+    private var isUserStopped = false
+
     private fun processAudio(buffer: ShortArray, length: Int) {
+        if (isUserStopped || !isRecording) return
+        com.example.core.VoiceInputManager.onAudioData(buffer, length)
         val state = liveSessionManager.zoyaState.value
         
         if (state != ZoyaState.IDLE) {
             // Send data to Gemini Live if session is active 
-            // (Even when speaking, to capture interruptions)
             liveSessionManager.sendAudioData(buffer, length)
-
-            if (state == ZoyaState.SPEAKING) {
-                // Determine if user is speaking to interrupt
-                var sum = 0L
-                for (i in 0 until length) {
-                    sum += abs(buffer[i].toLong())
-                }
-                val avg = if (length > 0) sum / length else 0
-                // We let Gemini Live API handle interruptions natively by sending audio.
-            }
-        } else {
-            // Reconnect if it disconnected unexpectedly
-            val now = System.currentTimeMillis()
-            if (now - lastFlushTime > 3000) {
-                lastFlushTime = now
-                liveSessionManager.startSession()
-            }
         }
+    }
+
+    fun stopAssistant() {
+        isUserStopped = true
+        isRecording = false
+        isAudioPlaybackActive = false
+        currentState = ZoyaState.IDLE
+        onStateChange?.invoke(currentState)
+        audioOutputQueue.clear()
+
+        try { audioRecord?.stop() } catch (e: Exception) {}
+        try { audioRecord?.release() } catch (e: Exception) {}
+        audioRecord = null
+
+        try { audioTrack?.stop() } catch (e: Exception) {}
+        try { audioTrack?.release() } catch (e: Exception) {}
+        audioTrack = null
+
+        try { liveSessionManager.stopSession() } catch (e: Exception) {}
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (e: Exception) {}
+        } else {
+            @Suppress("DEPRECATION")
+            try { stopForeground(true) } catch (e: Exception) {}
+        }
+        
+        activeService = null
+        stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") {
-            stopSelf()
+            stopAssistant()
             return START_NOT_STICKY
         }
         return START_STICKY
@@ -292,26 +335,18 @@ class ZoyaForegroundService : Service() {
     }
 
     fun sendTextMessage(text: String) {
+        if (isUserStopped) return
         liveSessionManager.sendTextMessage(text)
     }
 
     fun reconnectSession() {
+        isUserStopped = false
         liveSessionManager.startSession()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        activeService = null
-        isRecording = false
-        isAudioPlaybackActive = false
-        currentState = ZoyaState.IDLE
-        onStateChange?.invoke(currentState)
-        audioOutputQueue.clear()
-        try { audioRecord?.stop() } catch (e: Exception) {}
-        try { audioRecord?.release() } catch (e: Exception) {}
-        try { audioTrack?.stop() } catch (e: Exception) {}
-        try { audioTrack?.release() } catch (e: Exception) {}
-        try { liveSessionManager.stopSession() } catch (e: Exception) {}
+        stopAssistant()
         job.cancel()
     }
 

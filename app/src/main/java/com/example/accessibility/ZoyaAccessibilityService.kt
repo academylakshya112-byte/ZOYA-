@@ -114,32 +114,81 @@ class ZoyaAccessibilityService : AccessibilityService() {
         }
 
         fun startYouTubePlayAutomation(query: String, appContext: android.content.Context): String {
+            val cleanQuery = if (query.isBlank() ||
+                query.contains("hindi song", ignoreCase = true) ||
+                query.contains("achha song", ignoreCase = true) ||
+                query.contains("badhiya song", ignoreCase = true) ||
+                query.equals("song", ignoreCase = true) ||
+                query.equals("gana", ignoreCase = true) ||
+                query.equals("gaana", ignoreCase = true) ||
+                query.equals("music", ignoreCase = true)) {
+                "Trending Hit Hindi Songs"
+            } else {
+                query.trim()
+            }
+
             val inst = instance
             targetAppName = "youtube"
-            targetYouTubeQuery = query
-            youtubeAutomationStep = 1
+            targetYouTubeQuery = cleanQuery
+            youtubeAutomationStep = 1 // Step 1: Open YouTube & Tap Search
             shouldAutoClick = true
 
+            // Schedule proactive delayed fallback checks
+            mainHandler.postDelayed({
+                if (shouldAutoClick && targetAppName == "youtube") {
+                    instance?.processActiveWindow()
+                }
+            }, 800)
+
+            mainHandler.postDelayed({
+                if (shouldAutoClick && targetAppName == "youtube") {
+                    instance?.processActiveWindow()
+                }
+            }, 1800)
+
+            mainHandler.postDelayed({
+                if (shouldAutoClick && targetAppName == "youtube") {
+                    instance?.processActiveWindow()
+                }
+            }, 3200)
+
+            // Step 1: Launch YouTube main launch intent so user sees YouTube opening visibly
+            try {
+                val pm = (inst ?: appContext).packageManager
+                val launchIntent = pm.getLaunchIntentForPackage("com.google.android.youtube")
+                if (launchIntent != null) {
+                    launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    (inst ?: appContext).startActivity(launchIntent)
+                    return "YouTube open karke '$cleanQuery' search karke play kar rahi hoon..."
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error launching YouTube package intent", e)
+            }
+
+            // Fallback: ACTION_SEARCH intent
             try {
                 val intent = android.content.Intent(android.content.Intent.ACTION_SEARCH).apply {
                     setPackage("com.google.android.youtube")
-                    putExtra("query", query)
+                    putExtra("query", cleanQuery)
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 (inst ?: appContext).startActivity(intent)
-                return "Opening YouTube and playing: $query"
-            } catch (e: Exception) {
-                try {
-                    val pm = (inst ?: appContext).packageManager
-                    val launchIntent = pm.getLaunchIntentForPackage("com.google.android.youtube")
-                    if (launchIntent != null) {
-                        launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        (inst ?: appContext).startActivity(launchIntent)
-                        return "Opening YouTube app to search and play: $query"
-                    }
-                } catch (e2: Exception) {}
+                return "YouTube par '$cleanQuery' search kar rahi hoon..."
+            } catch (e2: Exception) {
                 return "YouTube app is not installed on this device."
             }
+        }
+
+        fun pressBack(): Boolean {
+            return instance?.performGlobalAction(GLOBAL_ACTION_BACK) ?: false
+        }
+
+        fun pressHome(): Boolean {
+            return instance?.performGlobalAction(GLOBAL_ACTION_HOME) ?: false
+        }
+
+        fun pressRecents(): Boolean {
+            return instance?.performGlobalAction(GLOBAL_ACTION_RECENTS) ?: false
         }
 
         fun dispatchGestureClick(x: Float, y: Float): Boolean {
@@ -335,15 +384,24 @@ class ZoyaAccessibilityService : AccessibilityService() {
             val parcelableData = event.parcelableData
             if (parcelableData is android.app.Notification) {
                 val extras = parcelableData.extras
-                val title = extras?.getString(android.app.Notification.EXTRA_TITLE) ?: ""
-                val text = extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
+                val title = extras?.getString(android.app.Notification.EXTRA_TITLE) 
+                    ?: extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() 
+                    ?: ""
+                val text = extras?.getString(android.app.Notification.EXTRA_TEXT) 
+                    ?: extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() 
+                    ?: ""
                 val appPackage = event.packageName?.toString() ?: ""
-                if (text.isNotEmpty() && !appPackage.contains("com.example") && !appPackage.contains("android")) {
+                if ((text.isNotEmpty() || title.isNotEmpty()) && !appPackage.contains("com.example") && appPackage != "android") {
                     lastNotificationSender = title
                     lastNotificationText = text
                     lastNotificationPackage = appPackage
                     lastNotificationTime = System.currentTimeMillis()
-                    Log.d(TAG, "Notification received: $title - $text from $appPackage")
+                    Log.d(TAG, "Notification received via Accessibility: $title - $text from $appPackage")
+                    try {
+                        com.example.notification.NotificationManagerHelper.processRawNotification(this, appPackage, title, text)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing accessibility notification", e)
+                    }
                 }
             }
             return
@@ -640,83 +698,319 @@ class ZoyaAccessibilityService : AccessibilityService() {
 
     private fun handleYouTubeAutomation(rootNode: AccessibilityNodeInfo) {
         val query = targetYouTubeQuery ?: return
-        when (youtubeAutomationStep) {
-            1 -> {
-                val searchEdit = findNodeByViewIdOrClass(rootNode, "com.google.android.youtube:id/search_edit_text", "android.widget.EditText")
-                if (searchEdit != null) {
-                    val arguments = Bundle()
-                    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, query)
-                    searchEdit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    Log.d(TAG, "YouTube: Typed query '$query'")
-                    youtubeAutomationStep = 2
 
-                    mainHandler.postDelayed({
-                        rootInActiveWindow?.let { currentRoot ->
-                            if (clickFirstVideoResult(currentRoot)) {
-                                targetYouTubeQuery = null
-                                youtubeAutomationStep = 0
-                                shouldAutoClick = false
-                            }
+        // 1. If video is already actively playing, finish automation cleanly
+        if (isYouTubeVideoActivelyPlaying(rootNode)) {
+            Log.d(TAG, "YouTube: Video playback confirmed active! Finishing automation.")
+            targetYouTubeQuery = null
+            youtubeAutomationStep = 0
+            shouldAutoClick = false
+            return
+        }
+
+        // 2. Check if Search Results are already visible on screen (as shown in user's screenshot)
+        if (isYouTubeSearchResults(rootNode)) {
+            if (clickFirstPlayableSongResult(rootNode)) {
+                Log.d(TAG, "YouTube: Successfully clicked playable song result for query '$query'")
+                // Wait briefly for playback to engage before releasing
+                mainHandler.postDelayed({
+                    rootInActiveWindow?.let { currentRoot ->
+                        if (isYouTubeVideoActivelyPlaying(currentRoot)) {
+                            targetYouTubeQuery = null
+                            youtubeAutomationStep = 0
+                            shouldAutoClick = false
                         }
-                    }, 1000)
-                } else {
-                    val searchButton = findNodeByViewIdOrDescription(rootNode, "com.google.android.youtube:id/menu_item_search", "Search")
-                        ?: findNodeByDescription(rootNode, "Search YouTube")
-                        ?: findSearchButton(rootNode)
-                    if (searchButton != null) {
-                        performClick(searchButton)
-                        Log.d(TAG, "YouTube: Clicked search button")
-                        youtubeAutomationStep = 2
-                    } else if (clickFirstVideoResult(rootNode)) {
-                        targetYouTubeQuery = null
-                        youtubeAutomationStep = 0
-                        shouldAutoClick = false
+                    }
+                }, 1500)
+                return
+            }
+        }
+
+        // 3. Check if search edit text is present on screen (user sees search bar)
+        val searchEdit = findNodeByViewIdOrClass(rootNode, "com.google.android.youtube:id/search_edit_text", "android.widget.EditText")
+        if (searchEdit != null) {
+            val currentText = searchEdit.text?.toString() ?: ""
+            if (!currentText.equals(query, ignoreCase = true)) {
+                // Visibly type query into search edit text
+                val arguments = Bundle()
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, query)
+                searchEdit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                Log.d(TAG, "YouTube: Visibly typed query '$query' into search bar")
+                youtubeAutomationStep = 2
+            }
+
+            // Submit the search query visibly
+            mainHandler.postDelayed({
+                rootInActiveWindow?.let { currentRoot ->
+                    val currentEdit = findNodeByViewIdOrClass(currentRoot, "com.google.android.youtube:id/search_edit_text", "android.widget.EditText")
+                    if (currentEdit != null) {
+                        submitYouTubeSearch(currentRoot, currentEdit)
+                    }
+                }
+            }, 350)
+            return
+        }
+
+        // 4. If on YouTube home screen without search open, click search icon once
+        val searchButton = findYouTubeSearchButton(rootNode)
+        if (searchButton != null) {
+            performClick(searchButton)
+            Log.d(TAG, "YouTube: Clicked Search icon on Home screen to open search")
+            youtubeAutomationStep = 2
+            return
+        }
+    }
+
+    private fun isYouTubeSearchResults(rootNode: AccessibilityNodeInfo): Boolean {
+        // Query text in header or search clear button
+        val searchEdit = findNodeByViewIdOrClass(rootNode, "com.google.android.youtube:id/search_edit_text", "android.widget.EditText")
+        val hasText = searchEdit?.text?.toString()?.isNotBlank() == true
+
+        val hasAd = rootNode.findAccessibilityNodeInfosByText("Sponsored").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Install").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Spotify").isNotEmpty()
+        val hasMixOrChannel = rootNode.findAccessibilityNodeInfosByText("Mix").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Curated by YouTube").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Subscribe").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("View Channel").isNotEmpty()
+        val hasChips = rootNode.findAccessibilityNodeInfosByText("All").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Shorts").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Videos").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Filter").isNotEmpty()
+
+        return hasText || (hasAd && hasMixOrChannel) || (hasMixOrChannel && hasChips)
+    }
+
+    private fun findYouTubeSearchButton(rootNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val dm = resources.displayMetrics
+        val searchButton = findNodeByViewIdOrDescription(rootNode, "com.google.android.youtube:id/menu_item_search", "Search")
+            ?: findNodeByDescription(rootNode, "Search YouTube")
+            ?: findNodeByDescription(rootNode, "Search videos")
+            ?: findNodeByDescription(rootNode, "खोजें")
+            ?: findSearchButton(rootNode)
+
+        if (searchButton != null) return searchButton
+
+        // Check top right header bar for clickable icon
+        val b = Rect()
+        for (i in 0 until rootNode.childCount) {
+            val child = rootNode.getChild(i) ?: continue
+            child.getBoundsInScreen(b)
+            if (b.top < dm.heightPixels * 0.12f && b.right > dm.widthPixels * 0.70f && child.isClickable) {
+                return child
+            }
+        }
+        return null
+    }
+
+    private fun submitYouTubeSearch(rootNode: AccessibilityNodeInfo, searchEdit: AccessibilityNodeInfo) {
+        val query = targetYouTubeQuery ?: "Trending Hit Hindi Songs"
+        val dm = resources.displayMetrics
+
+        // 1. Look for first search suggestion item in drop-down
+        val suggestions = rootNode.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/search_suggestion")
+        if (suggestions.isNotEmpty()) {
+            val first = suggestions.first()
+            if (performClick(first)) {
+                Log.d(TAG, "YouTube: Clicked first search suggestion row")
+                return
+            }
+        }
+
+        // 2. Perform IME search / click on searchEdit
+        searchEdit.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+
+        // 3. Dispatch gesture tap on keyboard bottom-right Enter/Search key
+        val enterX = dm.widthPixels * 0.90f
+        val enterY = dm.heightPixels * 0.94f
+        dispatchGestureClick(enterX, enterY)
+        Log.d(TAG, "YouTube: Dispatched keyboard search tap at ($enterX, $enterY)")
+
+        // 4. Proactive safety fallback: Fire ACTION_SEARCH intent after 600ms if results don't appear
+        mainHandler.postDelayed({
+            if (shouldAutoClick && targetAppName == "youtube") {
+                rootInActiveWindow?.let { currentRoot ->
+                    if (!isYouTubeSearchResults(currentRoot)) {
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEARCH).apply {
+                                setPackage("com.google.android.youtube")
+                                putExtra("query", query)
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } catch (e: Exception) {}
                     }
                 }
             }
-            2, 3 -> {
-                if (clickFirstVideoResult(rootNode)) {
-                    Log.d(TAG, "YouTube: Played top video for query '$query'")
-                    targetYouTubeQuery = null
-                    youtubeAutomationStep = 0
-                    shouldAutoClick = false
-                }
-            }
-        }
+        }, 600)
     }
 
-    private fun clickFirstVideoResult(rootNode: AccessibilityNodeInfo?): Boolean {
-        if (rootNode == null) return false
+    private fun clickFirstPlayableSongResult(rootNode: AccessibilityNodeInfo): Boolean {
+        val dm = resources.displayMetrics
+        val screenHeight = dm.heightPixels
+        val screenWidth = dm.widthPixels
 
-        val thumbnails = rootNode.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/thumbnail")
-        for (thumb in thumbnails) {
-            if (performClick(thumb)) return true
-        }
-
-        val resultsNodes = rootNode.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/results")
-        for (node in resultsNodes) {
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i)
-                if (child != null && (child.isClickable || child.childCount > 0)) {
-                    if (performClick(child)) return true
-                }
+        // 1. Measure bottom boundary of any Sponsored Ads (e.g. Spotify Sponsored ad in screenshot)
+        var adBottom = 0
+        val adNodes = mutableListOf<AccessibilityNodeInfo>()
+        collectAdNodes(rootNode, adNodes)
+        for (ad in adNodes) {
+            val b = Rect()
+            ad.getBoundsInScreen(b)
+            if (b.bottom > adBottom && b.bottom < screenHeight * 0.50f) {
+                adBottom = b.bottom
             }
         }
 
-        return findAndClickFirstVideoCard(rootNode)
+        // 2. Measure bottom boundary of Channel Topic banner (e.g. "Trending - Topic" with Subscribe/View Channel in screenshot)
+        var channelBottom = 0
+        val channelNodes = mutableListOf<AccessibilityNodeInfo>()
+        collectChannelBannerNodes(rootNode, channelNodes)
+        for (ch in channelNodes) {
+            val b = Rect()
+            ch.getBoundsInScreen(b)
+            if (b.bottom > channelBottom && b.bottom < screenHeight * 0.65f) {
+                channelBottom = b.bottom
+            }
+        }
+
+        // Playable content starts strictly below Ads and Channel banners
+        val safeTopCutoff = maxOf(screenHeight * 0.12f, adBottom.toFloat(), channelBottom.toFloat())
+        Log.d(TAG, "YouTube Search Results: adBottom=$adBottom, channelBottom=$channelBottom, safeTopCutoff=$safeTopCutoff")
+
+        // 3. Search accessibility tree for genuine playable video / mix / playlist item
+        val playableCandidate = findPlayableSongNode(rootNode, safeTopCutoff.toInt(), screenHeight)
+        if (playableCandidate != null) {
+            val bounds = Rect()
+            playableCandidate.getBoundsInScreen(bounds)
+
+            // If the item is partially cut off at screen bottom, scroll down to reveal it properly
+            if (bounds.bottom > screenHeight * 0.90f && bounds.top > safeTopCutoff) {
+                Log.d(TAG, "YouTube: Playable item partially off screen at bottom, scrolling down...")
+                scrollScreen("down")
+                return false
+            }
+
+            val tapX = bounds.centerX().toFloat().coerceIn(screenWidth * 0.15f, screenWidth * 0.85f)
+            val tapY = bounds.centerY().toFloat()
+
+            var clicked = performClick(playableCandidate)
+            if (dispatchGestureClick(tapX, tapY)) {
+                clicked = true
+            }
+
+            if (clicked) {
+                Log.d(TAG, "YouTube: Successfully clicked song/mix item at ($tapX, $tapY)")
+                return true
+            }
+        }
+
+        // 4. Fallback coordinate tap right on the first video/mix card (skipping ads and channels)
+        val tapX = screenWidth * 0.50f
+        val playableAreaHeight = (screenHeight * 0.86f) - safeTopCutoff
+        val tapY = if (playableAreaHeight > 150) {
+            safeTopCutoff + (playableAreaHeight * 0.38f)
+        } else {
+            screenHeight * 0.62f
+        }
+
+        Log.d(TAG, "YouTube: Fallback gesture tap on song/mix result at ($tapX, $tapY)")
+        return dispatchGestureClick(tapX, tapY)
     }
 
-    private fun findAndClickFirstVideoCard(node: AccessibilityNodeInfo?): Boolean {
-        if (node == null) return false
+    private fun findPlayableSongNode(node: AccessibilityNodeInfo?, minTop: Int, screenHeight: Int): AccessibilityNodeInfo? {
+        if (node == null) return null
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        // Ignore nodes above our safe cutoff
+        if (bounds.bottom <= minTop) return null
+
+        // Ignore ads and channel banners directly
+        if (isAdOrPromoNode(node) || isChannelBannerNode(node)) return null
+
+        val text = node.text?.toString()?.lowercase() ?: ""
         val desc = node.contentDescription?.toString()?.lowercase() ?: ""
-        if ((desc.contains("views") || desc.contains("minute") || desc.contains("seconds") || desc.contains("hour") || desc.contains("play video") || desc.contains("official video") || desc.contains("song") || desc.contains("music")) && (node.isClickable || node.childCount > 0)) {
-            if (performClick(node)) return true
+
+        val isPlayableIndicator = desc.contains("mix") || text.contains("mix") ||
+            desc.contains("curated by youtube") || text.contains("curated by youtube") ||
+            desc.contains("playlist") || text.contains("playlist") ||
+            desc.contains("views") || text.contains("views") ||
+            desc.contains("minute") || desc.contains("seconds") ||
+            desc.contains("play video") || text.contains("play video") ||
+            desc.contains("song") || text.contains("song") ||
+            Regex("\\d+:\\d+").containsMatchIn(text) || Regex("\\d+:\\d+").containsMatchIn(desc)
+
+        val viewId = node.viewIdResourceName ?: ""
+        val isThumbnail = viewId.contains("thumbnail") || viewId.contains("compact_link")
+
+        if ((isPlayableIndicator || isThumbnail) && bounds.top >= minTop - 30 && bounds.top < screenHeight * 0.85f && bounds.width() > 100 && bounds.height() > 70) {
+            return node
         }
+
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
-            if (findAndClickFirstVideoCard(child)) return true
+            val found = findPlayableSongNode(child, minTop, screenHeight)
+            if (found != null) return found
         }
-        return false
+        return null
+    }
+
+    private fun collectAdNodes(node: AccessibilityNodeInfo?, list: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        if (isAdOrPromoNode(node)) {
+            list.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            collectAdNodes(node.getChild(i), list)
+        }
+    }
+
+    private fun isAdOrPromoNode(node: AccessibilityNodeInfo): Boolean {
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        val id = node.viewIdResourceName?.lowercase() ?: ""
+        return text.contains("sponsored") || text.contains("install") || text == "ad" || text.startsWith("ad •") ||
+            desc.contains("sponsored") || desc.contains("promoted") || id.contains("ad_") ||
+            text.contains("spotify") || desc.contains("spotify")
+    }
+
+    private fun collectChannelBannerNodes(node: AccessibilityNodeInfo?, list: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        if (isChannelBannerNode(node)) {
+            list.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            collectChannelBannerNodes(node.getChild(i), list)
+        }
+    }
+
+    private fun isChannelBannerNode(node: AccessibilityNodeInfo): Boolean {
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        return text == "subscribe" || text == "view channel" || text.contains("subscribers") ||
+            desc == "subscribe" || desc == "view channel" || desc.contains("subscribers")
+    }
+
+    private fun isYouTubeVideoActivelyPlaying(rootNode: AccessibilityNodeInfo): Boolean {
+        val searchEdit = findNodeByViewIdOrClass(rootNode, "com.google.android.youtube:id/search_edit_text", "android.widget.EditText")
+        if (searchEdit != null && searchEdit.isVisibleToUser) {
+            return false
+        }
+
+        val hasPause = rootNode.findAccessibilityNodeInfosByText("Pause video").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Pause").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("विराम").isNotEmpty()
+
+        val playerViews = rootNode.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/player_view")
+        if (playerViews.isNotEmpty()) return true
+
+        val watchLayouts = rootNode.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/watch_while_layout")
+        val hasWatchControls = rootNode.findAccessibilityNodeInfosByText("Like this video").isNotEmpty() ||
+            rootNode.findAccessibilityNodeInfosByText("Comments").isNotEmpty()
+
+        return hasPause || (watchLayouts.isNotEmpty() && hasWatchControls)
     }
 
     private fun searchAndClickByDescriptions(node: AccessibilityNodeInfo, descs: List<String>): Boolean {
